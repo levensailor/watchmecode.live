@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 import uuid
 from collections.abc import Callable, Iterator
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 SQL_DIR = PROJECT_ROOT / "sql"
 LIBPQ_QUERY_PARAMS = {"sslmode", "sslrootcert", "connect_timeout", "application_name", "options", "target_session_attrs"}
 PIN_ATTEMPTS = 25
+SCHEMA_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 SESSION_COLUMNS = "id, pin, candidate_name, interviewer_email, language, status, created_at, updated_at"
 RUN_COLUMNS = "id, entry_path, command, stdout, stderr, exit_code, duration_ms, created_at"
 FILE_COLUMNS = "id, path, content, updated_at"
@@ -79,6 +81,9 @@ class Repository:
     def __init__(self, settings: Settings) -> None:
         self.postgres = settings.uses_postgres
         self._pg_url = sanitize_postgres_url(settings.database_url) if self.postgres else ""
+        if not SCHEMA_NAME.match(settings.db_schema):
+            raise ValueError(f"Invalid DB_SCHEMA: {settings.db_schema!r}")
+        self._schema = settings.db_schema
         self._sqlite_path = settings.sqlite_path
         if self.postgres:
             import psycopg  # noqa: F401  (fail fast if the driver is missing)
@@ -92,6 +97,10 @@ class Repository:
     def kind(self) -> str:
         return "postgres" if self.postgres else "sqlite"
 
+    def _search_path_sql(self) -> str:
+        """Transaction-scoped so pooled (transaction-mode) connections never leak the setting."""
+        return f'SET LOCAL search_path TO "{self._schema}"'
+
     @contextmanager
     def connect(self) -> Iterator[_Conn]:
         if self.postgres:
@@ -99,6 +108,7 @@ class Repository:
             from psycopg.rows import dict_row
 
             with psycopg.connect(self._pg_url, row_factory=dict_row, prepare_threshold=None, connect_timeout=10) as raw:
+                raw.execute(self._search_path_sql())
                 yield _Conn(raw, postgres=True)
         else:
             raw = sqlite3.connect(self._sqlite_path, timeout=10)
@@ -114,6 +124,8 @@ class Repository:
         script = (SQL_DIR / ("schema_postgres.sql" if self.postgres else "schema.sql")).read_text()
         if self.postgres:
             with self.connect() as conn:
+                conn.raw.execute(f'CREATE SCHEMA IF NOT EXISTS "{self._schema}"')
+                conn.raw.execute(self._search_path_sql())
                 conn.raw.execute(script)
         else:
             raw = sqlite3.connect(self._sqlite_path)

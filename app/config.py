@@ -46,6 +46,7 @@ class Settings:
     session_secret: str = field(default_factory=lambda: secrets.token_urlsafe(48))
     session_secret_configured: bool = False
     database_url: str = ""
+    db_schema: str = "watchmecode"
     sqlite_path: str = str(PROJECT_ROOT / "watchmecode.db")
     log_dir: str = str(PROJECT_ROOT / "logs")
     runs_dir: str = str(Path(tempfile.gettempdir()) / "watchmecode-runs")
@@ -83,6 +84,7 @@ def load_settings() -> Settings:
         session_secret=session_secret or defaults.session_secret,
         session_secret_configured=bool(session_secret),
         database_url=_first_env("DATABASE_URL", "POSTGRES_URL", "POSTGRES_URL_NON_POOLING"),
+        db_schema=_env("DB_SCHEMA", defaults.db_schema),
         sqlite_path=_env(
             "SQLITE_PATH",
             str(tmp / "watchmecode.db") if is_vercel else defaults.sqlite_path,
