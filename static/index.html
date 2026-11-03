@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{APP_NAME}} · {{APP_TAGLINE}}</title>
+    <meta name="description" content="{{APP_TAGLINE}}" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/app.css?v={{VERSION}}" />
+    <script>
+      (() => {
+        const saved = localStorage.getItem("wmc:theme");
+        const dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#/" id="brand">
+        <img src="/favicon.svg" alt="" />
+        <span id="brand-name">{{APP_NAME}}</span>
+      </a>
+
+      <nav class="menubar" id="menubar" aria-label="IDE menu" hidden>
+        <div class="menu" data-menu="file">
+          <button type="button">File</button>
+          <div class="dropdown" hidden>
+            <button data-action="new-file">New File… <kbd>Alt+N</kbd></button>
+            <button data-action="new-folder">New Folder…</button>
+            <button data-action="rename">Rename…</button>
+            <button data-action="delete">Delete</button>
+            <hr />
+            <button data-action="save">Save <kbd>Mod+S</kbd></button>
+            <button data-action="close-tab">Close Tab <kbd>Alt+W</kbd></button>
+            <hr />
+            <button data-action="leave">Leave Session</button>
+          </div>
+        </div>
+        <div class="menu" data-menu="edit">
+          <button type="button">Edit</button>
+          <div class="dropdown" hidden>
+            <button data-action="undo">Undo <kbd>Mod+Z</kbd></button>
+            <button data-action="redo">Redo <kbd>Mod+Shift+Z</kbd></button>
+            <hr />
+            <button data-action="find">Find <kbd>Mod+F</kbd></button>
+            <button data-action="select-all">Select All <kbd>Mod+A</kbd></button>
+          </div>
+        </div>
+        <div class="menu" data-menu="view">
+          <button type="button">View</button>
+          <div class="dropdown" hidden>
+            <button data-action="toggle-explorer">Toggle Explorer</button>
+            <button data-action="toggle-preview">Toggle Preview</button>
+            <button data-action="toggle-console">Toggle Console</button>
+            <hr />
+            <button data-action="toggle-theme">Toggle Dark Mode</button>
+          </div>
+        </div>
+        <div class="menu" data-menu="run">
+          <button type="button">Run</button>
+          <div class="dropdown" hidden>
+            <button data-action="run">Run <kbd>Mod+Enter</kbd></button>
+            <button data-action="toggle-live">Live Refresh <span id="menu-live-state">Off</span></button>
+            <hr />
+            <button data-action="clear-console">Clear Console</button>
+          </div>
+        </div>
+        <div class="menu" data-menu="help">
+          <button type="button">Help</button>
+          <div class="dropdown" hidden>
+            <button data-action="shortcuts">Keyboard Shortcuts</button>
+            <a href="/docs" target="_blank" rel="noopener">API Docs</a>
+            <button data-action="about">About</button>
+          </div>
+        </div>
+      </nav>
+
+      <div class="session-chip" id="session-chip" hidden></div>
+
+      <div class="topbar-right">
+        <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">◐</button>
+        <a class="btn btn-primary btn-sm" id="signin-btn" href="/auth/google" hidden>Interviewer sign in</a>
+        <div class="menu" id="user-menu" hidden>
+          <button class="user-btn" id="user-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Account menu">
+            <span id="user-avatar"></span>
+            <span class="name" id="user-name"></span>
+            <span aria-hidden="true">▾</span>
+          </button>
+          <div class="dropdown right" id="user-dropdown" role="menu" hidden>
+            <div class="dropdown-meta" id="user-email"></div>
+            <a role="menuitem" href="#/">Candidate portal</a>
+            <hr />
+            <a role="menuitem" href="/auth/logout" id="logout-link">Log out</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Landing + candidate portal -->
+    <main class="bento" id="view-home">
+      <section class="tile hero span-4 rows-2 static">
+        <div>
+          <span class="caption">Live interviews · 10 languages · shared control</span>
+          <h1>{{APP_NAME}}</h1>
+          <p>{{APP_TAGLINE}}. Create a session, share a 6-digit PIN, and code together in real time.</p>
+        </div>
+        <div class="hero-actions" id="hero-actions"></div>
+      </section>
+
+      <section class="tile span-2 rows-2 static" id="join-tile">
+        <form class="stack" id="join-form" autocomplete="off">
+          <div>
+            <h2>Join an interview</h2>
+            <span class="caption">Candidates: enter the PIN your interviewer shared.</span>
+          </div>
+          <input class="input pin-input" id="pin-input" inputmode="numeric" pattern="\d{6}" maxlength="6" placeholder="••••••" aria-label="6-digit PIN" required />
+          <button class="btn btn-primary" type="submit" id="join-btn">Join</button>
+          <div class="error" id="join-error" role="alert"></div>
+        </form>
+      </section>
+
+      <section class="tile span-3 rows-2 static" id="create-tile" hidden>
+        <form class="stack" id="create-form" autocomplete="off">
+          <div>
+            <h2>New session</h2>
+            <span class="caption">Generate a PIN for a named candidate.</span>
+          </div>
+          <div class="field">
+            <label for="candidate-input">Candidate name</label>
+            <input class="input" id="candidate-input" maxlength="80" placeholder="e.g. Ada Lovelace" required />
+          </div>
+          <div class="field">
+            <label for="language-select">Starter language</label>
+            <select class="input" id="language-select"></select>
+          </div>
+          <button class="btn btn-primary" type="submit" id="create-btn">Generate PIN</button>
+          <div class="error" id="create-error" role="alert"></div>
+          <div class="pin-result" id="pin-result" hidden>
+            <span class="caption">Share this PIN with <strong id="pin-result-name"></strong></span>
+            <div class="row">
+              <span class="pin grow" id="pin-result-pin"></span>
+              <button class="btn btn-sm" type="button" id="copy-pin">Copy</button>
+              <a class="btn btn-sm btn-primary" id="open-new-session">Open IDE</a>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <section class="tile metric span-1" id="metric-sessions" hidden>
+        <span class="caption">Sessions</span>
+        <span class="big" id="metric-sessions-value">0</span>
+      </section>
+      <section class="tile metric span-1" id="metric-candidates" hidden>
+        <span class="caption">Candidates</span>
+        <span class="big" id="metric-candidates-value">0</span>
+      </section>
+      <section class="tile metric span-1" id="metric-active" hidden>
+        <span class="caption">Active now</span>
+        <span class="big" id="metric-active-value">0</span>
+      </section>
+
+      <section class="tile metric span-1">
+        <span class="caption">Languages</span>
+        <span class="big" id="metric-languages">10</span>
+      </section>
+      <section class="tile metric span-1">
+        <span class="caption">PIN length</span>
+        <span class="big">6</span>
+      </section>
+      <section class="tile metric span-1">
+        <span class="caption">Sync latency</span>
+        <span class="big">~1s</span>
+      </section>
+
+      <section class="tile span-3" id="how-tile">
+        <h2>How it works</h2>
+        <ol class="steps">
+          <li>Interviewer signs in with Google and names the candidate.</li>
+          <li>Share the 6-digit PIN. The candidate joins from any browser.</li>
+          <li>Both edit, run, and preview code with equal control.</li>
+        </ol>
+      </section>
+
+      <section class="tile span-6 static" id="portal-tile" hidden>
+        <div class="portal-head">
+          <div class="grow">
+            <h2>Candidate portal</h2>
+            <span class="caption">Sessions grouped by candidate. Open any session to review files and run history.</span>
+          </div>
+          <input class="input" id="portal-search" type="search" placeholder="Filter by candidate" aria-label="Filter by candidate" />
+        </div>
+        <div class="candidates" id="candidates"></div>
+      </section>
+    </main>
+
+    <!-- IDE -->
+    <main class="ide" id="view-ide" hidden>
+      <section class="tile ide-toolbar">
+        <span class="toolbar-title" id="ide-title"></span>
+        <span class="chip" id="ide-language"></span>
+        <span class="chip ended" id="ide-status" hidden>Ended</span>
+        <span class="toolbar-sep"></span>
+        <button class="btn btn-sm run-btn" id="run-btn" type="button" title="Run (Mod+Enter)">▶ Run <span id="run-target"></span></button>
+        <label class="switch" title="Re-run automatically after edits">
+          <input type="checkbox" id="live-toggle" />
+          Live refresh
+        </label>
+        <span class="grow"></span>
+        <span class="sync" id="sync-status"><span class="dot" id="sync-dot"></span><span id="sync-text">Connecting…</span></span>
+      </section>
+
+      <section class="tile pane-explorer">
+        <div class="pane-head">
+          Explorer
+          <span class="actions">
+            <button class="icon-btn" type="button" data-action="new-file" title="New file">＋</button>
+            <button class="icon-btn" type="button" data-action="new-folder" title="New folder">▣</button>
+          </span>
+        </div>
+        <div class="pane-body"><ul class="tree" id="file-tree"></ul></div>
+      </section>
+
+      <section class="tile pane-editor">
+        <div class="tabs" id="tabs" role="tablist"></div>
+        <div class="editor-host" id="editor-host"></div>
+      </section>
+
+      <div class="pane-side" id="pane-side">
+        <section class="tile" id="preview-pane">
+          <div class="pane-head">
+            <span id="preview-title">Preview</span>
+            <span class="actions">
+              <button class="icon-btn" type="button" data-action="refresh-preview" title="Refresh preview">↻</button>
+            </span>
+          </div>
+          <div class="pane-body" id="preview-body"></div>
+        </section>
+        <section class="tile" id="console-pane">
+          <div class="pane-head">
+            Console
+            <span class="actions">
+              <button class="icon-btn" type="button" data-action="clear-console" title="Clear console">⌫</button>
+            </span>
+          </div>
+          <div class="pane-body"><div class="console" id="console"></div></div>
+        </section>
+      </div>
+    </main>
+
+    <dialog id="prompt-dialog">
+      <form method="dialog" id="prompt-form">
+        <h3 id="prompt-title"></h3>
+        <div class="field">
+          <label for="prompt-input" id="prompt-label"></label>
+          <input class="input" id="prompt-input" autocomplete="off" />
+        </div>
+        <p class="caption" id="prompt-message"></p>
+        <div class="row">
+          <button class="btn" value="cancel" type="submit" formnovalidate>Cancel</button>
+          <button class="btn btn-primary" value="ok" type="submit" id="prompt-ok">OK</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="info-dialog">
+      <h3 id="info-title"></h3>
+      <div id="info-body"></div>
+      <form method="dialog" class="row"><button class="btn btn-primary">Close</button></form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" hidden></div>
+
+    <script type="module" src="/static/app.js?v={{VERSION}}"></script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+// Single CodeMirror 6 bundle so every extension shares one @codemirror/state instance.
+export { EditorView, basicSetup } from "codemirror";
+export { EditorState, Compartment } from "@codemirror/state";
+export { keymap } from "@codemirror/view";
+export { undo, redo, selectAll, indentWithTab } from "@codemirror/commands";
+export { openSearchPanel } from "@codemirror/search";
+export { StreamLanguage } from "@codemirror/language";
+export { oneDark } from "@codemirror/theme-one-dark";
+export { python } from "@codemirror/lang-python";
+export { javascript } from "@codemirror/lang-javascript";
+export { java } from "@codemirror/lang-java";
+export { cpp } from "@codemirror/lang-cpp";
+export { go } from "@codemirror/lang-go";
+export { php } from "@codemirror/lang-php";
+export { html } from "@codemirror/lang-html";
+export { css } from "@codemirror/lang-css";
+export { json } from "@codemirror/lang-json";
+export { markdown } from "@codemirror/lang-markdown";
+export { csharp } from "@codemirror/legacy-modes/mode/clike";
+export { shell } from "@codemirror/legacy-modes/mode/shell";

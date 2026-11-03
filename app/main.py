@@ -7,6 +7,7 @@ import logging
 import time
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -23,11 +24,21 @@ SESSION_COOKIE = "wmc_session"
 STATIC_DIR = PROJECT_ROOT / "static"
 
 
+def asset_version() -> str:
+    mtimes = sorted(int(path.stat().st_mtime) for path in STATIC_DIR.glob("*.*"))
+    return str(mtimes[-1]) if mtimes else "0"
+
+
 def render_index(settings: Settings) -> str:
     template = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-    return template.replace("{{APP_NAME}}", html.escape(settings.app_name)).replace(
-        "{{APP_TAGLINE}}", html.escape(settings.app_tagline)
-    )
+    replacements = {
+        "{{APP_NAME}}": html.escape(settings.app_name),
+        "{{APP_TAGLINE}}": html.escape(settings.app_tagline),
+        "{{VERSION}}": asset_version(),
+    }
+    for placeholder, value in replacements.items():
+        template = template.replace(placeholder, value)
+    return template
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -53,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         logger.info("%s %s -> %s (%.1f ms)", request.method, request.url.path, response.status_code, elapsed_ms)
         return response
 
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.session_secret,

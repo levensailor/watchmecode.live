@@ -356,6 +356,13 @@ class CodeRunner:
         return proc.returncode, stdout, stderr, timed_out
 
     @staticmethod
+    def _scrub(text: str, workdir: Path) -> str:
+        """Show workspace-relative paths instead of server temp directories."""
+        for prefix in {str(workdir.resolve()), str(workdir)}:
+            text = text.replace(prefix + os.sep, "").replace(prefix, ".")
+        return text
+
+    @staticmethod
     def _read_capped(handle, cap: int) -> str:
         data = handle.read(cap + 1)
         text = data[:cap].decode("utf-8", errors="replace")
@@ -403,8 +410,8 @@ class CodeRunner:
         return RunResult(
             entry_path=entry_path,
             command=" && ".join(commands),
-            stdout="".join(stdout_parts),
-            stderr="".join(stderr_parts),
+            stdout=self._scrub("".join(stdout_parts), workdir),
+            stderr=self._scrub("".join(stderr_parts), workdir),
             exit_code=exit_code,
             duration_ms=duration_ms,
         )
