@@ -1,0 +1,47 @@
+site_name: watchmecode.live
+site_description: Live code-share IDE for technical interviews
+site_author: levensailor
+site_url: https://watchmecode-live.readthedocs.io/
+repo_url: https://github.com/levensailor/watchmecode.live
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  favicon: assets/favicon.svg
+  logo: assets/favicon.svg
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: red
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: red
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  features:
+    - content.code.copy
+    - navigation.sections
+
+nav:
+  - Home: index.md
+  - Using it: usage.md
+  - Architecture: architecture.md
+  - API: api.md
+  - Deployment: deployment.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
