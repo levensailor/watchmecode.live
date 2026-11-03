@@ -14,3 +14,7 @@ build/
 .build/
 logs/
 *.log
+*.db
+*.db-*
+.pytest_cache/
+site/
