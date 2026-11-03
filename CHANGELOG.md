@@ -4,6 +4,7 @@ Feature changes, newest first. Times are America/New_York.
 
 ## 2026-11-03
 
+- **17:20** Add Privacy Policy and Terms of Service pages with footer links, a 120x120 PNG logo for Google OAuth branding, and remove the landing-page count tiles.
 - **14:16** Add README, contributing guide, changelog, and a MkDocs site with Mermaid diagrams so interviewers and contributors can get started quickly.
 - **14:10** Skip pip installs for packages already cached so repeat Python runs on Vercel stay fast and quiet.
 - **14:09** Fall back to pip --target for Python auto-install so third-party imports work on Vercel, where the uv binary is not bundled.
