@@ -224,15 +224,15 @@ class CodeRunner:
                     argv += ["--with", pkg]
                 argv.append(entry_path)
                 if packages:
-                    plan.notes.append(f"uv: auto-installing {', '.join(packages)}")
+                    plan.notes.append(f"Installing {', '.join(packages)}…")
                 elif has_inline_metadata:
-                    plan.notes.append("uv: using PEP 723 inline metadata")
+                    plan.notes.append("Installing script dependencies…")
                 plan.steps.append(Step(argv, timeout + (install_timeout if packages or has_inline_metadata else 0)))
             elif packages:
                 deps = self.tools / "pydeps"
                 missing = missing_pip_packages(deps, packages)
                 if missing:
-                    plan.notes.append(f"pip: auto-installing {', '.join(missing)} (uv unavailable)")
+                    plan.notes.append(f"Installing {', '.join(missing)}…")
                     plan.steps.append(
                         Step(
                             [sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
@@ -252,7 +252,7 @@ class CodeRunner:
             if packages:
                 if "package.json" not in files and not (workdir / "package.json").exists():
                     (workdir / "package.json").write_text(json.dumps({"private": True}))
-                plan.notes.append(f"npm: installing {', '.join(packages)}")
+                plan.notes.append(f"Installing {', '.join(packages)}…")
                 plan.steps.append(Step(self._node(["npm", "install", "--no-save", "--silent", *packages]), install_timeout, "install"))
             if lang == LanguageId.typescript:
                 tsx = self._ensure_tsx(plan, install_timeout)
@@ -341,7 +341,7 @@ class CodeRunner:
         local = self.tools / "node_modules" / ".bin" / "tsx"
         if not local.exists():
             self.tools.mkdir(parents=True, exist_ok=True)
-            plan.notes.append("npm: installing the tsx TypeScript runner (first run only)")
+            plan.notes.append("Installing the TypeScript runner (first run only)…")
             plan.steps.append(
                 Step(self._node(["npm", "install", "--prefix", str(self.tools), "--silent", "tsx"]), install_timeout, "install")
             )

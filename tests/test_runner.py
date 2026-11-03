@@ -49,6 +49,7 @@ def test_python_plan_falls_back_to_pip_without_uv(settings, tmp_path, monkeypatc
     assert install.argv[-1] == "requests"
     assert execute.argv[-1] == "main.py"
     assert execute.env["PYTHONPATH"].endswith("pydeps")
+    assert plan.notes == ["Installing requests…"]
 
     (runner_deps := tmp_path / "runs" / "_tools" / "pydeps" / "requests-2.0.0.dist-info").mkdir(parents=True)
     assert runner_deps.exists()

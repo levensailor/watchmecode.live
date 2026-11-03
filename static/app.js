@@ -9,6 +9,7 @@ const POLL_HIDDEN_MS = 4000;
 const SAVE_DEBOUNCE_MS = 350;
 const LIVE_DEBOUNCE_MS = 1200;
 const KEEP_FILE = ".keep";
+const NOTE_LINE = /^\[(Installing|HTML|uv|pip|npm)[^\]]*\]$/;
 const CLIENT_ID = crypto.randomUUID();
 const STORAGE = { theme: "wmc:theme", live: "wmc:live", token: (id) => `wmc:token:${id}` };
 
@@ -929,7 +930,7 @@ const ide = {
     const notes = [];
     const errLines = [];
     for (const line of (run.stderr || "").split("\n")) {
-      if (/^\[(uv|npm|HTML|tsx).*\]$/.test(line)) notes.push(line);
+      if (NOTE_LINE.test(line)) notes.push(line.slice(1, -1));
       else errLines.push(line);
     }
     const stderr = errLines.join("\n").trim();
@@ -1002,7 +1003,7 @@ const ide = {
       return;
     }
     const run = this.lastRun;
-    const stderr = (run.stderr || "").split("\n").filter((line) => !/^\[(uv|npm|HTML|tsx).*\]$/.test(line)).join("\n").trim();
+    const stderr = (run.stderr || "").split("\n").filter((line) => !NOTE_LINE.test(line)).join("\n").trim();
     $("preview-title").textContent = `Output · ${run.entry_path}`;
     body.replaceChildren(
       ...[
