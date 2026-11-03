@@ -1,0 +1,15 @@
+---
+description: Execute prompt.md, the specification this project was launched with
+alwaysApply: true
+---
+
+This workspace was created by /tmp. `prompt.md` at the repository root is the specification.
+
+When a chat starts here without a more specific request, read `prompt.md` completely and execute it end to end:
+
+1. Plan the work from the Project configuration, UI design, and Instructions sections.
+2. Build it in small steps; run the tests and the app after each step.
+3. Commit after each meaningful change.
+4. Keep the documentation files listed in `prompt.md` up to date.
+
+Credentials and settings are in the gitignored `.env`. Read them from the environment; never print, hardcode, or commit them.
