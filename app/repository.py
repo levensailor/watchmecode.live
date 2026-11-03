@@ -26,9 +26,15 @@ SCHEMA_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 SESSION_COLUMNS = "id, pin, candidate_name, interviewer_email, language, status, created_at, updated_at"
 RUN_COLUMNS = "id, entry_path, command, stdout, stderr, exit_code, duration_ms, created_at"
 FILE_COLUMNS = "id, path, content, updated_at"
+RECORDING_COLUMNS = "id, session_id, created_by, started_at, ended_at, start_cursor, end_cursor, initial_files"
+PLAYBACK_KINDS_SQL = "'file_upsert', 'file_delete', 'file_rename', 'run'"
 
 
 class PinExhaustedError(RuntimeError):
+    pass
+
+
+class RecordingConflictError(RuntimeError):
     pass
 
 
@@ -239,9 +245,107 @@ class Repository:
 
     def set_status(self, session_id: str, status: str, actor: str) -> dict[str, Any] | None:
         with self.connect() as conn:
+            if status == "ended":
+                active = self._active_recording(conn, session_id)
+                if active:
+                    self._stop_recording(conn, session_id, active["id"], actor)
             conn.run("UPDATE sessions SET status = ? WHERE id = ?", (status, session_id))
             self._event(conn, session_id, "session", actor, None, data={"status": status})
         return self.get_session(session_id)
+
+    # Recordings -------------------------------------------------------------
+
+    def _recording_row(self, conn: _Conn, row: dict[str, Any]) -> dict[str, Any]:
+        end = row["end_cursor"] if row["end_cursor"] is not None else self.latest_cursor(row["session_id"], conn)
+        counted = conn.one(
+            f"SELECT COUNT(*) AS n FROM events WHERE session_id = ? AND id > ? AND id <= ? AND kind IN ({PLAYBACK_KINDS_SQL})",
+            (row["session_id"], row["start_cursor"], end),
+        )
+        return {
+            "id": row["id"],
+            "session_id": row["session_id"],
+            "created_by": row["created_by"],
+            "started_at": row["started_at"],
+            "ended_at": row["ended_at"],
+            "event_count": int(counted["n"]) if counted else 0,
+        }
+
+    def _active_recording(self, conn: _Conn, session_id: str) -> dict[str, Any] | None:
+        return conn.one(
+            f"SELECT {RECORDING_COLUMNS} FROM recordings WHERE session_id = ? AND ended_at IS NULL "
+            "ORDER BY started_at DESC LIMIT 1",
+            (session_id,),
+        )
+
+    def active_recording(self, session_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = self._active_recording(conn, session_id)
+            return self._recording_row(conn, row) if row else None
+
+    def start_recording(self, session_id: str, actor: str) -> dict[str, Any]:
+        with self.connect() as conn:
+            if self._active_recording(conn, session_id):
+                raise RecordingConflictError("A recording is already in progress")
+            files = [{"path": f["path"], "content": f["content"]} for f in self.list_files(session_id, conn)]
+            recording_id = uuid.uuid4().hex
+            conn.run(
+                "INSERT INTO recordings (id, session_id, created_by, started_at, start_cursor, initial_files) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (recording_id, session_id, actor, utcnow(), self.latest_cursor(session_id, conn), json.dumps(files)),
+            )
+            self._event(conn, session_id, "recording", actor, None, data={"state": "started", "id": recording_id})
+            row = conn.one(f"SELECT {RECORDING_COLUMNS} FROM recordings WHERE id = ?", (recording_id,))
+            assert row is not None
+            logger.info("Recording %s started in session %s", recording_id, session_id)
+            return self._recording_row(conn, row)
+
+    def _stop_recording(self, conn: _Conn, session_id: str, recording_id: str, actor: str) -> None:
+        conn.run(
+            "UPDATE recordings SET ended_at = ?, end_cursor = ? WHERE id = ? AND session_id = ? AND ended_at IS NULL",
+            (utcnow(), self.latest_cursor(session_id, conn), recording_id, session_id),
+        )
+        self._event(conn, session_id, "recording", actor, None, data={"state": "stopped", "id": recording_id})
+        logger.info("Recording %s stopped in session %s", recording_id, session_id)
+
+    def stop_recording(self, session_id: str, recording_id: str, actor: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.one(
+                f"SELECT {RECORDING_COLUMNS} FROM recordings WHERE id = ? AND session_id = ?", (recording_id, session_id)
+            )
+            if not row:
+                return None
+            if row["ended_at"] is None:
+                self._stop_recording(conn, session_id, recording_id, actor)
+                row = conn.one(f"SELECT {RECORDING_COLUMNS} FROM recordings WHERE id = ?", (recording_id,))
+            return self._recording_row(conn, row)
+
+    def list_recordings(self, session_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.all(
+                f"SELECT {RECORDING_COLUMNS} FROM recordings WHERE session_id = ? ORDER BY started_at DESC", (session_id,)
+            )
+            return [self._recording_row(conn, row) for row in rows]
+
+    def get_playback(self, session_id: str, recording_id: str, limit: int = 50_000) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.one(
+                f"SELECT {RECORDING_COLUMNS} FROM recordings WHERE id = ? AND session_id = ?", (recording_id, session_id)
+            )
+            if not row:
+                return None
+            end = row["end_cursor"] if row["end_cursor"] is not None else self.latest_cursor(session_id, conn)
+            events = conn.all(
+                "SELECT id, kind, path, data, actor, client_id, created_at FROM events "
+                f"WHERE session_id = ? AND id > ? AND id <= ? AND kind IN ({PLAYBACK_KINDS_SQL}) ORDER BY id LIMIT ?",
+                (session_id, row["start_cursor"], end, limit),
+            )
+            playback = self._recording_row(conn, row)
+        for event in events:
+            event["id"] = int(event["id"])
+            event["data"] = json.loads(event["data"]) if event["data"] else None
+        playback["initial_files"] = json.loads(row["initial_files"])
+        playback["events"] = events
+        return playback
 
     # Files ------------------------------------------------------------------
 

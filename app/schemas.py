@@ -118,6 +118,15 @@ class SessionDetail(SessionOut):
     runs: list[RunOut]
 
 
+class RecordingOut(BaseModel):
+    id: str
+    session_id: str
+    created_by: str
+    started_at: str
+    ended_at: str | None = None
+    event_count: int = 0
+
+
 class SessionState(BaseModel):
     session: SessionPublic
     role: Literal["interviewer", "candidate"]
@@ -125,6 +134,7 @@ class SessionState(BaseModel):
     files: list[FileOut]
     runs: list[RunOut]
     cursor: int
+    recording: RecordingOut | None = None
 
 
 class JoinIn(BaseModel):
@@ -138,7 +148,7 @@ class JoinOut(BaseModel):
 
 class EventOut(BaseModel):
     id: int
-    kind: Literal["file_upsert", "file_delete", "file_rename", "run", "session"]
+    kind: Literal["file_upsert", "file_delete", "file_rename", "run", "session", "recording"]
     path: str | None = None
     data: dict[str, Any] | None = None
     actor: str
@@ -148,4 +158,15 @@ class EventOut(BaseModel):
 
 class ChangesOut(BaseModel):
     cursor: int
+    events: list[EventOut]
+
+
+class PlaybackFile(BaseModel):
+    path: str
+    content: str
+
+
+class RecordingPlayback(RecordingOut):
+    session: SessionPublic
+    initial_files: list[PlaybackFile]
     events: list[EventOut]

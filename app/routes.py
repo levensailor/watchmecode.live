@@ -16,7 +16,7 @@ from app.auth import (
     session_user,
 )
 from app.languages import LANGUAGES
-from app.repository import PathConflictError, PinExhaustedError, Repository
+from app.repository import PathConflictError, PinExhaustedError, RecordingConflictError, Repository
 from app.runner import CodeRunner
 from app.schemas import (
     AppInfoOut,
@@ -29,6 +29,8 @@ from app.schemas import (
     JoinIn,
     JoinOut,
     LanguageOut,
+    RecordingOut,
+    RecordingPlayback,
     RenameOut,
     RunIn,
     RunOut,
@@ -135,6 +137,52 @@ def end_session(session_id: str, user: dict = Depends(require_user), repo: Repos
     return repo.set_status(session_id, "ended", user.get("name") or user["email"])
 
 
+@router.get("/api/sessions/{session_id}/recordings", response_model=list[RecordingOut], tags=["interviewer"])
+def list_recordings(session_id: str, user: dict = Depends(require_user), repo: Repository = Depends(get_repo)) -> list[dict]:
+    _owned_session(repo, session_id, user)
+    return repo.list_recordings(session_id)
+
+
+@router.post(
+    "/api/sessions/{session_id}/recordings",
+    response_model=RecordingOut,
+    status_code=status.HTTP_201_CREATED,
+    tags=["interviewer"],
+)
+def start_recording(session_id: str, user: dict = Depends(require_user), repo: Repository = Depends(get_repo)) -> dict:
+    session = _owned_session(repo, session_id, user)
+    if session["status"] != "active":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ended sessions can't be recorded")
+    try:
+        return repo.start_recording(session_id, user.get("name") or user["email"])
+    except RecordingConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
+
+@router.post("/api/sessions/{session_id}/recordings/{recording_id}/stop", response_model=RecordingOut, tags=["interviewer"])
+def stop_recording(
+    session_id: str, recording_id: str, user: dict = Depends(require_user), repo: Repository = Depends(get_repo)
+) -> dict:
+    _owned_session(repo, session_id, user)
+    recording = repo.stop_recording(session_id, recording_id, user.get("name") or user["email"])
+    if not recording:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Recording not found")
+    return recording
+
+
+@router.get(
+    "/api/sessions/{session_id}/recordings/{recording_id}", response_model=RecordingPlayback, tags=["interviewer"]
+)
+def get_playback(
+    session_id: str, recording_id: str, user: dict = Depends(require_user), repo: Repository = Depends(get_repo)
+) -> dict:
+    session = _owned_session(repo, session_id, user)
+    playback = repo.get_playback(session_id, recording_id)
+    if not playback:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Recording not found")
+    return {**playback, "session": session}
+
+
 # Shared ------------------------------------------------------------------------
 
 
@@ -164,6 +212,7 @@ def session_state(
         "files": repo.list_files(session_id),
         "runs": list(reversed(repo.list_runs(session_id, limit=20))),
         "cursor": cursor,
+        "recording": repo.active_recording(session_id),
     }
 
 

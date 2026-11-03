@@ -266,6 +266,26 @@ button, input, select { font: inherit; color: inherit; }
 
 .banner { grid-column: 1 / -1; padding: 10px 14px; border-radius: 14px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-weight: 600; font-size: 14px; }
 
+/* Recording and playback ------------------------------------------------------------- */
+
+.chip.rec { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-variant-numeric: tabular-nums; }
+.rec-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); animation: rec-pulse 1.2s ease-in-out infinite; }
+@keyframes rec-pulse { 50% { opacity: 0.3; } }
+#record-btn.recording { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+
+.segmented { display: inline-flex; padding: 3px; gap: 2px; border-radius: 12px; background: var(--inset); border: 1px solid var(--hairline); }
+.segmented button { border: 0; background: none; padding: 4px 10px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--muted); }
+.segmented button.active { background: var(--tile); color: var(--accent); box-shadow: var(--shadow); }
+.seek { accent-color: var(--accent); min-width: 120px; }
+#player-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.player-actor { align-self: center; padding-right: 12px; font-size: 12.5px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+.player .tree-item { cursor: pointer; }
+
+.recording-list { display: grid; gap: 8px; }
+#info-dialog:has(.recording-list) { width: min(520px, 92vw); }
+.recording-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-inner); background: var(--inset); }
+.recording-row .meta { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+
 /* Footer and legal pages ------------------------------------------------------------ */
 
 .site-footer {

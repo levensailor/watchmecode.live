@@ -51,3 +51,17 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE INDEX IF NOT EXISTS events_session ON events (session_id, id);
+
+-- Interview recordings: a window over the events feed plus the files at the moment recording started.
+CREATE TABLE IF NOT EXISTS recordings (
+    id            TEXT PRIMARY KEY,
+    session_id    TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+    created_by    TEXT NOT NULL,
+    started_at    TEXT NOT NULL,
+    ended_at      TEXT,
+    start_cursor  INTEGER NOT NULL,
+    end_cursor    INTEGER,
+    initial_files TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS recordings_session ON recordings (session_id, started_at);

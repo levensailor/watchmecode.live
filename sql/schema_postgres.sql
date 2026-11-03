@@ -53,7 +53,21 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS events_session ON events (session_id, id);
 
+CREATE TABLE IF NOT EXISTS recordings (
+    id            TEXT PRIMARY KEY,
+    session_id    TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+    created_by    TEXT NOT NULL,
+    started_at    TEXT NOT NULL,
+    ended_at      TEXT,
+    start_cursor  BIGINT NOT NULL,
+    end_cursor    BIGINT,
+    initial_files TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS recordings_session ON recordings (session_id, started_at);
+
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recordings ENABLE ROW LEVEL SECURITY;

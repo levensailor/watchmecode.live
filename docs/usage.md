@@ -10,6 +10,14 @@
 
 The portal groups sessions by candidate name. **Open** loads any session's files and run history, before or after the interview.
 
+### Recording and playback
+
+1. In the IDE, press **● Record**. A red **REC** badge with a timer appears for you and the candidate, and the candidate gets a notice.
+2. Press **■ Stop recording** when you're done. Ending the session also stops recording.
+3. Open **Recordings** from the IDE toolbar or from a session in the portal, then press **▶ Play**.
+
+The player rebuilds the workspace as it was when recording started, then replays every edit, file change, and run. Use **1x / 2x / 4x** to change speed, drag the seek bar to jump around, and press Space to play or pause. Recordings are visible only to the interviewer who owns the session.
+
 ## Candidates
 
 1. Open [watchmecode.live](https://watchmecode.live). You don't need an account.

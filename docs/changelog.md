@@ -4,6 +4,7 @@ Feature changes, newest first. Times are America/New_York.
 
 ## 2026-11-03
 
+- **17:35** Add interview recording for interviewers and a playback view with 1x/2x/4x speed and seeking, so interviews can be reviewed after they end.
 - **17:20** Add Privacy Policy and Terms of Service pages with footer links, a 120x120 PNG logo for Google OAuth branding, and remove the landing-page count tiles.
 - **14:16** Add README, contributing guide, changelog, and a MkDocs site with Mermaid diagrams so interviewers and contributors can get started quickly.
 - **14:10** Skip pip installs for packages already cached so repeat Python runs on Vercel stay fast and quiet.

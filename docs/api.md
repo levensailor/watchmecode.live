@@ -18,7 +18,11 @@ The live OpenAPI explorer is at [watchmecode.live/docs](https://watchmecode.live
 | POST | `/api/sessions` | `{candidate_name, language}` | 201 session with `pin` |
 | GET | `/api/sessions` | `?candidate_name=` filter | Your sessions |
 | GET | `/api/sessions/{id}` |  | Session with `files` and `runs` |
-| POST | `/api/sessions/{id}/end` |  | Ends the session and retires the PIN |
+| POST | `/api/sessions/{id}/end` |  | Ends the session, retires the PIN, and stops any recording |
+| GET | `/api/sessions/{id}/recordings` |  | Recordings, newest first |
+| POST | `/api/sessions/{id}/recordings` |  | 201 starts a recording; 409 if one is already running |
+| POST | `/api/sessions/{id}/recordings/{rid}/stop` |  | Stops the recording |
+| GET | `/api/sessions/{id}/recordings/{rid}` |  | Playback data: starting files plus the edits, file changes, and runs in the recording |
 
 ## Shared (owning interviewer, or candidate bearer token)
 

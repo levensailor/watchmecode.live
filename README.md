@@ -22,6 +22,7 @@ Both        → edit main.py · ▶ Run · see each other's changes in ~1s
 | Zero-setup imports | `import requests` or `require('lodash')` just works. Python and Node packages install on Run. |
 | Live refresh | Toggle it on and code re-runs a moment after you stop typing. |
 | Candidate portal | Sessions grouped by candidate. Reopen any of them after the interview to review files and runs. |
+| Record and replay | Interviewers press ● Record; both sides see a REC badge. Replay edits, file changes, and runs later at 1x, 2x, or 4x with a seek bar. |
 | Google sign-in | OpenID Connect with PKCE. Name and avatar sit top right with a Log out dropdown. |
 | Light and dark | Bento Box design, custom favicon, works on phones. |
 

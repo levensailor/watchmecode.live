@@ -109,6 +109,7 @@ function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   localStorage.setItem(STORAGE.theme, theme);
   ide.onThemeChange();
+  player.onThemeChange();
 }
 
 function toggleTheme() {
@@ -172,7 +173,7 @@ function runnableLanguage(path) {
 
 function renderUser() {
   const signedIn = Boolean(app.me);
-  const inIde = !$("view-ide").hidden;
+  const inIde = !$("view-ide").hidden || !$("view-player").hidden;
   $("user-menu").hidden = !signedIn;
   $("signin-btn").hidden = signedIn || inIde || !app.info?.google_enabled;
   if (!signedIn) return;
@@ -242,6 +243,43 @@ function formatDate(iso) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+function formatClock(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
+}
+
+async function showRecordings(sessionId, candidateName) {
+  let recordings;
+  try {
+    recordings = await api(`/api/sessions/${sessionId}/recordings`);
+  } catch (err) {
+    toast(err.message);
+    return;
+  }
+  const body = recordings.length
+    ? h("div", { class: "recording-list" },
+        recordings.map((r) => {
+          const length = r.ended_at ? formatClock(Date.parse(r.ended_at) - Date.parse(r.started_at)) : "in progress";
+          return h("div", { class: "recording-row" },
+            h("div", { class: "grow" },
+              h("strong", {}, formatDate(r.started_at)),
+              h("div", { class: "meta" }, `${length} · ${r.event_count} changes · by ${r.created_by}`),
+            ),
+            h("a", {
+              class: "btn btn-sm btn-primary",
+              href: `#/s/${sessionId}/play/${r.id}`,
+              onclick: () => $("info-dialog").close(),
+            }, "▶ Play"),
+          );
+        }),
+      )
+    : h("p", { class: "empty" }, "No recordings yet. Press ● Record in the IDE during an interview.");
+  infoDialog(`Recordings${candidateName ? ` · ${candidateName}` : ""}`, body);
+}
+
 function renderPortal(filter) {
   const sessions = app.sessions;
   const groups = new Map();
@@ -270,6 +308,7 @@ function renderPortal(filter) {
             ),
             h("div", { class: "row" },
               s.status === "active" ? h("button", { class: "btn btn-sm btn-danger", type: "button", onclick: () => endSession(s) }, "End") : null,
+              h("button", { class: "btn btn-sm", type: "button", onclick: () => showRecordings(s.id, s.candidate_name) }, "Recordings"),
               h("a", { class: "btn btn-sm btn-primary", href: `#/s/${s.id}` }, "Open"),
             ),
           ),
@@ -466,8 +505,47 @@ const ide = {
     this.renderPreview();
     $("live-toggle").checked = localStorage.getItem(STORAGE.live) === "1";
     this.syncLiveLabel();
+    this.recording = state.recording;
+    this.renderRecording();
     this.setSync("ok", "Synced");
     this.schedulePoll(POLL_MS);
+  },
+
+  renderRecording() {
+    const isInterviewer = this.state?.role === "interviewer";
+    const active = Boolean(this.recording);
+    const canRecord = isInterviewer && (this.state.session.status === "active" || active);
+    $("record-btn").hidden = !canRecord;
+    $("record-btn").textContent = active ? "■ Stop recording" : "● Record";
+    $("record-btn").classList.toggle("recording", active);
+    $("recordings-btn").hidden = !isInterviewer;
+    $("rec-indicator").hidden = !active;
+    clearInterval(this.recTimer);
+    if (!active) return;
+    const started = Date.parse(this.recording.started_at);
+    const tick = () => ($("rec-elapsed").textContent = formatClock(Date.now() - started));
+    tick();
+    this.recTimer = setInterval(tick, 1000);
+  },
+
+  async toggleRecording() {
+    const button = $("record-btn");
+    button.disabled = true;
+    try {
+      if (this.recording) {
+        await api(`/api/sessions/${this.sessionId}/recordings/${this.recording.id}/stop`, { method: "POST" });
+        this.recording = null;
+        toast("Recording saved");
+      } else {
+        this.recording = await api(`/api/sessions/${this.sessionId}/recordings`, { method: "POST" });
+        toast("Recording started");
+      }
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      button.disabled = false;
+      this.renderRecording();
+    }
   },
 
   close() {
@@ -484,9 +562,14 @@ const ide = {
     this.openTabs = [];
     this.active = null;
     this.lastRun = null;
+    this.recording = null;
+    clearInterval(this.recTimer);
     $("menubar").hidden = true;
     $("session-chip").hidden = true;
     $("ide-status").hidden = true;
+    $("rec-indicator").hidden = true;
+    $("record-btn").hidden = true;
+    $("recordings-btn").hidden = true;
   },
 
   renderHeader() {
@@ -734,6 +817,19 @@ const ide = {
     if (event.kind === "session" && event.data?.status) {
       this.state.session.status = event.data.status;
       this.renderHeader();
+      this.renderRecording();
+      return;
+    }
+    if (event.kind === "recording") {
+      const started = event.data?.state === "started";
+      if (started && this.recording?.id !== event.data.id) {
+        this.recording = { id: event.data.id, started_at: event.created_at };
+        if (this.state.role === "candidate") toast("The interviewer started recording this session.");
+      } else if (!started && this.recording?.id === event.data?.id) {
+        this.recording = null;
+        if (this.state.role === "candidate") toast("Recording stopped.");
+      }
+      this.renderRecording();
       return;
     }
     if (event.client_id === CLIENT_ID) return;
@@ -1068,6 +1164,8 @@ const ide = {
 
 function setupIde() {
   $("run-btn").addEventListener("click", () => ide.run());
+  $("record-btn").addEventListener("click", () => ide.toggleRecording());
+  $("recordings-btn").addEventListener("click", () => showRecordings(ide.sessionId, ide.state?.session.candidate_name));
   $("live-toggle").addEventListener("change", () => {
     localStorage.setItem(STORAGE.live, $("live-toggle").checked ? "1" : "0");
     ide.syncLiveLabel();
@@ -1089,11 +1187,317 @@ function setupIde() {
   });
 }
 
+/* Recording playback ----------------------------------------------------------------------- */
+
+const PREVIEW_THROTTLE_MS = 500;
+
+const player = {
+  data: null,
+  view: null,
+  viewPath: undefined,
+  themeCompartment: new Compartment(),
+  frames: [],
+  duration: 1,
+  position: 0,
+  speed: 1,
+  playing: false,
+  raf: null,
+  lastTick: 0,
+  applied: -1,
+  files: new Map(),
+  runs: [],
+  active: null,
+  actor: "",
+  generation: 0,
+  previewAt: 0,
+
+  onThemeChange() {
+    if (this.view) this.view.dispatch({ effects: this.themeCompartment.reconfigure(ide.themeExtension()) });
+  },
+
+  async open(sessionId, recordingId) {
+    this.close();
+    const generation = ++this.generation;
+    $("view-home").hidden = true;
+    $("view-ide").hidden = true;
+    $("view-player").hidden = false;
+    renderUser();
+    let data;
+    try {
+      data = await api(`/api/sessions/${sessionId}/recordings/${recordingId}`);
+    } catch (err) {
+      if (generation !== this.generation) return;
+      toast(err.status === 401 ? "Sign in as the interviewer to watch recordings." : err.message);
+      location.hash = "#/";
+      return;
+    }
+    if (generation !== this.generation) return;
+    this.data = data;
+    const start = Date.parse(data.started_at);
+    this.frames = data.events.map((event) => ({ ...event, t: Math.max(0, Date.parse(event.created_at) - start) }));
+    const end = data.ended_at ? Date.parse(data.ended_at) - start : Date.now() - start;
+    this.duration = Math.max(1, end, this.frames.at(-1)?.t ?? 0);
+    $("player-title").textContent = data.session.candidate_name;
+    $("player-meta").textContent = `${languageLabel(data.session.language)} · ${formatDate(data.started_at)}`;
+    $("player-back").href = `#/s/${sessionId}`;
+    document.title = `Playback · ${data.session.candidate_name} · ${app.info?.app_name ?? ""}`;
+    this.setSpeed(this.speed);
+    this.seek(0);
+  },
+
+  close() {
+    this.pause();
+    this.view?.destroy();
+    this.view = null;
+    this.viewPath = undefined;
+    this.data = null;
+    this.frames = [];
+    this.applied = -1;
+    this.position = 0;
+    $("view-player").hidden = true;
+  },
+
+  editorState(doc, path) {
+    return EditorState.create({
+      doc,
+      extensions: [
+        basicSetup,
+        EditorState.readOnly.of(true),
+        EditorView.editable.of(false),
+        path ? languageExtension(path) : [],
+        this.themeCompartment.of(ide.themeExtension()),
+      ],
+    });
+  },
+
+  reset() {
+    this.files = new Map(this.data.initial_files.map((f) => [f.path, f.content]));
+    this.runs = [];
+    this.applied = -1;
+    this.actor = "";
+    const lang = app.languages.find((l) => l.id === this.data.session.language);
+    this.active = (lang && this.files.has(lang.entry) && lang.entry) || this.visiblePaths()[0] || null;
+  },
+
+  visiblePaths() {
+    return [...this.files.keys()].filter((p) => !p.endsWith(`/${KEEP_FILE}`) && p !== KEEP_FILE).sort();
+  },
+
+  applyFrame(frame) {
+    switch (frame.kind) {
+      case "file_upsert":
+        this.files.set(frame.path, frame.data.content);
+        if (!frame.path.endsWith(KEEP_FILE)) this.active = frame.path;
+        this.actor = `${frame.actor} editing ${frame.path}`;
+        return "file";
+      case "file_delete":
+        for (const path of frame.data.paths) this.files.delete(path);
+        if (!this.files.has(this.active)) this.active = this.visiblePaths()[0] ?? null;
+        this.actor = `${frame.actor} deleted ${frame.path}`;
+        return "tree";
+      case "file_rename":
+        for (const [from, to] of Object.entries(frame.data.mapping)) {
+          this.files.set(to, this.files.get(from) ?? "");
+          this.files.delete(from);
+          if (this.active === from) this.active = to;
+        }
+        this.actor = `${frame.actor} renamed ${frame.path}`;
+        return "tree";
+      case "run":
+        this.runs.push({ ...frame.data, actor: frame.actor });
+        this.actor = `${frame.actor} ran ${frame.data.entry_path}`;
+        return "run";
+      default:
+        return null;
+    }
+  },
+
+  advanceTo(t) {
+    const changes = new Set();
+    while (this.applied + 1 < this.frames.length && this.frames[this.applied + 1].t <= t) {
+      this.applied += 1;
+      const kind = this.applyFrame(this.frames[this.applied]);
+      if (kind) changes.add(kind);
+    }
+    return changes;
+  },
+
+  seek(t) {
+    const target = Math.max(0, Math.min(this.duration, t));
+    if (target < this.position || this.applied < 0) this.reset();
+    this.position = target;
+    this.advanceTo(target);
+    this.renderAll();
+  },
+
+  renderAll() {
+    this.renderTree();
+    this.renderEditor(false);
+    this.renderConsole();
+    this.renderOutput(true);
+    this.renderTime();
+  },
+
+  renderTree() {
+    const items = this.visiblePaths().map((path) =>
+      h("li", {},
+        h("div", { class: `tree-item${path === this.active ? " active" : ""}`, title: path, onclick: () => { this.active = path; this.renderTree(); this.renderEditor(false); } },
+          h("span", { class: "tree-icon" }, "◇"),
+          h("span", { class: "label" }, path),
+        ),
+      ),
+    );
+    $("player-tree").replaceChildren(...(items.length ? items : [h("li", { class: "empty" }, "No files")]));
+  },
+
+  renderEditor(follow) {
+    const path = this.active;
+    const content = path ? this.files.get(path) ?? "" : "";
+    $("player-file").textContent = path ?? "—";
+    $("player-actor").textContent = this.actor;
+    if (!this.view) {
+      this.view = new EditorView({ state: this.editorState(content, path), parent: $("player-editor") });
+      this.viewPath = path;
+      return;
+    }
+    if (this.viewPath !== path) {
+      this.view.setState(this.editorState(content, path));
+      this.viewPath = path;
+      return;
+    }
+    const current = this.view.state.doc.toString();
+    if (current === content) return;
+    const change = commonPrefixSuffix(current, content);
+    this.view.dispatch({
+      changes: change,
+      selection: follow ? { anchor: change.from + change.insert.length } : undefined,
+      scrollIntoView: follow,
+    });
+  },
+
+  renderConsole() {
+    const consoleEl = $("player-console");
+    consoleEl.replaceChildren(...this.runs.map((run) => this.runEntry(run)));
+    consoleEl.parentElement.scrollTop = consoleEl.parentElement.scrollHeight;
+  },
+
+  runEntry(run) {
+    const lines = (run.stderr || "").split("\n");
+    const notes = lines.filter((line) => NOTE_LINE.test(line)).map((line) => line.slice(1, -1));
+    const stderr = lines.filter((line) => !NOTE_LINE.test(line)).join("\n").trim();
+    return h("div", { class: "entry" },
+      h("div", { class: "cmd" }, `$ run ${run.entry_path}`),
+      notes.length ? h("div", { class: "note" }, notes.join("\n")) : null,
+      run.stdout ? h("div", { class: "out" }, run.stdout) : null,
+      stderr ? h("div", { class: "err" }, stderr) : null,
+      h("div", { class: "meta" }, `exit ${run.exit_code} · ${run.duration_ms} ms · by ${run.actor}`),
+    );
+  },
+
+  renderOutput(force) {
+    const body = $("player-output");
+    const htmlEntry = this.files.has("index.html") ? "index.html" : this.visiblePaths().find((p) => /\.html?$/i.test(p));
+    if (this.data.session.language === "web" && htmlEntry) {
+      const now = performance.now();
+      if (!force && now - this.previewAt < PREVIEW_THROTTLE_MS) return;
+      this.previewAt = now;
+      $("player-output-title").textContent = `Preview · ${htmlEntry}`;
+      const frame = h("iframe", { class: "preview-frame", sandbox: "allow-scripts", title: "Preview", referrerpolicy: "no-referrer" });
+      frame.srcdoc = ide.buildPreviewDocument.call({ files: this.files }, htmlEntry);
+      body.replaceChildren(frame);
+      return;
+    }
+    const run = this.runs.at(-1);
+    $("player-output-title").textContent = run ? `Output · ${run.entry_path}` : "Output";
+    if (!run) {
+      body.replaceChildren(h("div", { class: "editor-empty" }, "No runs yet at this point."));
+      return;
+    }
+    const stderr = (run.stderr || "").split("\n").filter((line) => !NOTE_LINE.test(line)).join("\n").trim();
+    body.replaceChildren(
+      ...[
+        run.stdout || run.exit_code === 0 ? h("pre", { class: "output" }, run.stdout || "(no output)") : null,
+        run.exit_code !== 0 ? h("pre", { class: "output", style: "color: var(--danger)" }, `${stderr}\n\nexit ${run.exit_code}`.trim()) : null,
+      ].filter(Boolean),
+    );
+  },
+
+  renderTime() {
+    $("player-time").textContent = `${formatClock(this.position)} / ${formatClock(this.duration)}`;
+    $("player-seek").value = String(Math.round((this.position / this.duration) * 1000));
+  },
+
+  play() {
+    if (!this.data) return;
+    if (this.position >= this.duration) this.seek(0);
+    this.playing = true;
+    $("player-play").textContent = "❚❚ Pause";
+    this.lastTick = performance.now();
+    this.raf = requestAnimationFrame((now) => this.tick(now));
+  },
+
+  pause() {
+    this.playing = false;
+    cancelAnimationFrame(this.raf);
+    $("player-play").textContent = "▶ Play";
+  },
+
+  toggle() {
+    this.playing ? this.pause() : this.play();
+  },
+
+  tick(now) {
+    if (!this.playing) return;
+    this.position = Math.min(this.duration, this.position + (now - this.lastTick) * this.speed);
+    this.lastTick = now;
+    const changes = this.advanceTo(this.position);
+    if (changes.has("tree") || changes.has("file")) this.renderTree();
+    if (changes.size) this.renderEditor(true);
+    if (changes.has("run")) this.renderConsole();
+    if (changes.has("run") || changes.has("file") || changes.has("tree")) this.renderOutput(changes.has("run"));
+    this.renderTime();
+    if (this.position >= this.duration) this.pause();
+    else this.raf = requestAnimationFrame((next) => this.tick(next));
+  },
+
+  setSpeed(speed) {
+    this.speed = speed;
+    document.querySelectorAll("#player-speed button").forEach((button) => {
+      const active = Number(button.dataset.speed) === speed;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+  },
+};
+
+function setupPlayer() {
+  $("player-play").addEventListener("click", () => player.toggle());
+  $("player-speed").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-speed]");
+    if (button) player.setSpeed(Number(button.dataset.speed));
+  });
+  $("player-seek").addEventListener("input", (event) => {
+    player.seek((Number(event.target.value) / 1000) * player.duration);
+  });
+  document.addEventListener("keydown", (event) => {
+    if ($("view-player").hidden || event.target.closest("input, textarea, button, a, .cm-editor")) return;
+    if (event.code === "Space") { event.preventDefault(); player.toggle(); }
+  });
+}
+
 /* Routing ----------------------------------------------------------------------------- */
 
 async function route() {
-  const match = location.hash.match(/^#\/s\/([A-Za-z0-9]+)/);
   closeMenus();
+  const playback = location.hash.match(/^#\/s\/([A-Za-z0-9]+)\/play\/([A-Za-z0-9]+)/);
+  if (playback) {
+    if (ide.sessionId) await ide.flushAll();
+    ide.close();
+    await player.open(playback[1], playback[2]);
+    return;
+  }
+  player.close();
+  const match = location.hash.match(/^#\/s\/([A-Za-z0-9]+)/);
   if (match) {
     if (ide.sessionId !== match[1]) await ide.open(match[1]);
     return;
@@ -1111,6 +1515,7 @@ async function init() {
   setupMenus();
   setupHome();
   setupIde();
+  setupPlayer();
   $("theme-toggle").addEventListener("click", toggleTheme);
 
   const params = new URLSearchParams(location.search);

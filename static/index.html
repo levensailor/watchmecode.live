@@ -185,6 +185,10 @@
           <input type="checkbox" id="live-toggle" />
           Live refresh
         </label>
+        <span class="toolbar-sep"></span>
+        <button class="btn btn-sm" id="record-btn" type="button" hidden>● Record</button>
+        <button class="btn btn-sm" id="recordings-btn" type="button" hidden>Recordings</button>
+        <span class="chip rec" id="rec-indicator" hidden title="This session is being recorded"><span class="rec-dot"></span>REC <span id="rec-elapsed">0:00</span></span>
         <span class="grow"></span>
         <span class="sync" id="sync-status"><span class="dot" id="sync-dot"></span><span id="sync-text">Connecting…</span></span>
       </section>
@@ -223,6 +227,49 @@
             </span>
           </div>
           <div class="pane-body"><div class="console" id="console"></div></div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Recording playback -->
+    <main class="ide player" id="view-player" hidden>
+      <section class="tile ide-toolbar">
+        <a class="btn btn-sm" id="player-back" href="#/">← Back</a>
+        <span class="toolbar-title" id="player-title"></span>
+        <span class="chip" id="player-meta"></span>
+        <span class="toolbar-sep"></span>
+        <button class="btn btn-sm run-btn" id="player-play" type="button" title="Play / pause (Space)">▶ Play</button>
+        <div class="segmented" id="player-speed" role="group" aria-label="Playback speed">
+          <button type="button" data-speed="1" class="active" aria-pressed="true">1x</button>
+          <button type="button" data-speed="2" aria-pressed="false">2x</button>
+          <button type="button" data-speed="4" aria-pressed="false">4x</button>
+        </div>
+        <input class="seek grow" id="player-seek" type="range" min="0" max="1000" value="0" aria-label="Playback position" />
+        <span class="sync" id="player-time">0:00 / 0:00</span>
+      </section>
+
+      <section class="tile pane-explorer">
+        <div class="pane-head">Files</div>
+        <div class="pane-body"><ul class="tree" id="player-tree"></ul></div>
+      </section>
+
+      <section class="tile pane-editor">
+        <div class="tabs">
+          <div class="tab active" id="player-file">—</div>
+          <span class="grow"></span>
+          <span class="player-actor" id="player-actor"></span>
+        </div>
+        <div class="editor-host" id="player-editor"></div>
+      </section>
+
+      <div class="pane-side">
+        <section class="tile">
+          <div class="pane-head"><span id="player-output-title">Output</span></div>
+          <div class="pane-body" id="player-output"></div>
+        </section>
+        <section class="tile">
+          <div class="pane-head">Console</div>
+          <div class="pane-body"><div class="console" id="player-console"></div></div>
         </section>
       </div>
     </main>
