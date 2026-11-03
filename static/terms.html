@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Terms of Service · {{APP_NAME}}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/app.css?v={{VERSION}}" />
+    <script>
+      (() => {
+        const saved = localStorage.getItem("wmc:theme");
+        const dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/"><img src="/favicon.svg" alt="" /><span>{{APP_NAME}}</span></a>
+    </header>
+    <main class="legal">
+      <article class="tile static">
+        <h1>Terms of Service</h1>
+        <p class="caption">Last updated {{LEGAL_UPDATED}}</p>
+
+        <p>These terms apply when you use {{APP_NAME}} (the "Service"). By using the Service, you agree to them.</p>
+
+        <h2>The Service</h2>
+        <p>The Service lets interviewers create coding sessions, share a PIN with a candidate, and edit and run code together. It is provided free of charge, "as is", and may change or stop at any time.</p>
+
+        <h2>Accounts</h2>
+        <ul>
+          <li>Interviewers sign in with Google and are responsible for activity in the sessions they create.</li>
+          <li>Interviewers share a PIN only with the intended candidate, and end sessions when the interview is over.</li>
+          <li>Candidates join with a PIN and need no account.</li>
+        </ul>
+
+        <h2>Acceptable use</h2>
+        <p>You agree not to use the Service, or the code it runs, to:</p>
+        <ul>
+          <li>attack, scan, or overload the Service or any other system;</li>
+          <li>mine cryptocurrency, send spam, or run long-lived or background processes;</li>
+          <li>access data or sessions you aren't authorized to see;</li>
+          <li>upload malware or content that is unlawful, infringing, or harmful;</li>
+          <li>store personal data about candidates beyond what an interview needs.</li>
+        </ul>
+        <p>Code runs with time and output limits. We may block or remove content, end sessions, or suspend access that breaks these terms.</p>
+
+        <h2>Your content</h2>
+        <p>You keep ownership of the code and files you create. You give us permission to store, process, and run them only to provide the Service. Interviewers are responsible for having a lawful basis to collect candidate information and for following their own hiring and privacy obligations.</p>
+
+        <h2>Privacy</h2>
+        <p>Our <a href="/privacy">Privacy Policy</a> describes the data we collect and how to have it deleted.</p>
+
+        <h2>Disclaimers</h2>
+        <p>The Service is provided without warranties of any kind, express or implied, including availability, accuracy of code execution, and fitness for a particular purpose. Don't rely on it as the only record of an interview.</p>
+
+        <h2>Limitation of liability</h2>
+        <p>To the fullest extent permitted by law, the operators of {{APP_NAME}} are not liable for indirect, incidental, or consequential damages, or for lost data or profits, arising from your use of the Service.</p>
+
+        <h2>Changes</h2>
+        <p>We may update these terms. If we do, we'll update the date above, and continued use means you accept the new terms.</p>
+
+        <h2>Contact</h2>
+        <p>Questions: <a href="{{CONTACT_URL}}" target="_blank" rel="noopener">{{CONTACT_URL}}</a></p>
+      </article>
+    </main>
+    <footer class="site-footer">
+      <a href="/">Home</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms" aria-current="page">Terms</a>
+    </footer>
+  </body>
+</html>

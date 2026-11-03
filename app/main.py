@@ -29,11 +29,14 @@ def asset_version() -> str:
     return str(mtimes[-1]) if mtimes else "0"
 
 
-def render_index(settings: Settings) -> str:
-    template = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+def render_page(settings: Settings, filename: str = "index.html") -> str:
+    template = (STATIC_DIR / filename).read_text(encoding="utf-8")
     replacements = {
         "{{APP_NAME}}": html.escape(settings.app_name),
         "{{APP_TAGLINE}}": html.escape(settings.app_tagline),
+        "{{APP_URL}}": html.escape(settings.public_url or "/"),
+        "{{CONTACT_URL}}": html.escape(settings.contact_url),
+        "{{LEGAL_UPDATED}}": html.escape(settings.legal_updated),
         "{{VERSION}}": asset_version(),
     }
     for placeholder, value in replacements.items():
@@ -91,7 +94,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         @app.get("/", include_in_schema=False, response_class=HTMLResponse)
         def index() -> HTMLResponse:
-            return HTMLResponse(render_index(settings), headers={"Cache-Control": "no-cache"})
+            return HTMLResponse(render_page(settings), headers={"Cache-Control": "no-cache"})
+
+        @app.get("/privacy", include_in_schema=False, response_class=HTMLResponse)
+        def privacy() -> HTMLResponse:
+            return HTMLResponse(render_page(settings, "privacy.html"))
+
+        @app.get("/terms", include_in_schema=False, response_class=HTMLResponse)
+        def terms() -> HTMLResponse:
+            return HTMLResponse(render_page(settings, "terms.html"))
 
     logger.info("%s started (%s storage); logging to %s", settings.app_name, repo.kind, log_path)
     return app

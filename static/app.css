@@ -19,6 +19,7 @@
   --pad: 22px;
   --font: "Geist", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --footer-h: 36px;
   color-scheme: light;
 }
 
@@ -156,7 +157,9 @@ button, input, select { font: inherit; color: inherit; }
 
 .tile h2 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.01em; }
 .tile .big { font-size: 48px; font-weight: 700; line-height: 1.05; letter-spacing: -0.03em; }
-.tile.metric { display: flex; flex-direction: column; justify-content: space-between; }
+#create-form { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(200px, 1.4fr) minmax(160px, 1fr) auto; gap: 12px; align-items: end; }
+#create-form > .error, #create-form > .pin-result { grid-column: 1 / -1; }
+#create-form > .error:empty { display: none; }
 
 .hero { background: var(--hero); color: #fff; border: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 20px; }
 .hero h1 { margin: 0; font-size: clamp(32px, 5vw, 56px); line-height: 1; letter-spacing: -0.04em; overflow-wrap: anywhere; }
@@ -190,8 +193,8 @@ button, input, select { font: inherit; color: inherit; }
   grid-template-columns: 236px minmax(0, 1fr) minmax(320px, 38%);
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas: "toolbar toolbar toolbar" "explorer editor side";
-  gap: 12px; padding: 0 12px 12px;
-  height: calc(100vh - 64px);
+  gap: 12px; padding: 0 12px;
+  height: calc(100vh - 64px - var(--footer-h));
 }
 .ide.no-explorer { grid-template-columns: 0 minmax(0, 1fr) minmax(320px, 38%); }
 .ide.no-side { grid-template-columns: 236px minmax(0, 1fr) 0; }
@@ -263,6 +266,25 @@ button, input, select { font: inherit; color: inherit; }
 
 .banner { grid-column: 1 / -1; padding: 10px 14px; border-radius: 14px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-weight: 600; font-size: 14px; }
 
+/* Footer and legal pages ------------------------------------------------------------ */
+
+.site-footer {
+  display: flex; justify-content: center; align-items: center; gap: 18px;
+  height: var(--footer-h); font-size: 12px; font-weight: 500;
+}
+.site-footer a { color: var(--muted); text-decoration: none; }
+.site-footer a:hover, .site-footer a[aria-current="page"] { color: var(--accent); }
+.bento { margin-bottom: 12px; }
+
+.legal { max-width: 760px; margin: 12px auto 24px; padding: 0 20px; }
+.legal article { padding: 32px 36px; line-height: 1.65; }
+.legal h1 { margin: 0 0 4px; font-size: 36px; letter-spacing: -0.02em; }
+.legal h2 { margin: 28px 0 8px; font-size: 18px; }
+.legal ul { padding-left: 20px; }
+.legal li { margin: 6px 0; }
+.legal a { color: var(--accent); }
+.legal code { font: 13px var(--mono); padding: 1px 5px; border-radius: 6px; background: var(--inset); }
+
 /* Toast and dialog ----------------------------------------------------------------- */
 
 .toast {
@@ -287,6 +309,7 @@ dialog .row { justify-content: flex-end; margin-top: 16px; }
   .span-3, .span-4, .span-6 { grid-column: span 2; }
   .menubar { display: none; }
   .btn { white-space: nowrap; }
+  #create-form { grid-template-columns: 1fr; }
   .session-chip { display: none; }
   .ide, .ide.no-explorer, .ide.no-side, .ide.no-explorer.no-side {
     grid-template-columns: 1fr; grid-template-rows: auto 220px 60vh 70vh;
@@ -300,5 +323,4 @@ dialog .row { justify-content: flex-end; margin-top: 16px; }
   .topbar { padding: 0 14px; gap: 10px; }
   .bento { padding: 0 14px; }
   #signin-btn { display: none; }
-  .tile .big { font-size: 40px; }
 }

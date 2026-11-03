@@ -39,6 +39,8 @@ class Settings:
     app_tagline: str = "Live code-share IDE for technical interviews"
     app_author: str = "levensailor"
     public_url: str = ""
+    contact_url: str = "https://github.com/levensailor/watchmecode.live/issues"
+    legal_updated: str = "November 3, 2026"
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = ""
@@ -77,6 +79,8 @@ def load_settings() -> Settings:
         app_tagline=_env("APP_TAGLINE", defaults.app_tagline),
         app_author=_env("APP_AUTHOR", defaults.app_author),
         public_url=_env("PUBLIC_URL"),
+        contact_url=_env("CONTACT_URL", defaults.contact_url),
+        legal_updated=_env("LEGAL_UPDATED", defaults.legal_updated),
         google_client_id=_env("GOOGLE_CLIENT_ID"),
         google_client_secret=_env("GOOGLE_CLIENT_SECRET"),
         google_redirect_uri=_env("GOOGLE_REDIRECT_URI"),

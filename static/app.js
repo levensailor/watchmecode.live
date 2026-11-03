@@ -204,7 +204,6 @@ function renderHome() {
   $("create-tile").hidden = !signedIn;
   $("portal-tile").hidden = !signedIn;
   $("how-tile").hidden = signedIn;
-  for (const id of ["metric-sessions", "metric-candidates", "metric-active"]) $(id).hidden = !signedIn;
 
   const actions = $("hero-actions");
   actions.replaceChildren();
@@ -244,12 +243,6 @@ function formatDate(iso) {
 
 function renderPortal(filter) {
   const sessions = app.sessions;
-  if (!filter) {
-    const names = new Set(sessions.map((s) => s.candidate_name.toLowerCase()));
-    $("metric-sessions-value").textContent = sessions.length;
-    $("metric-candidates-value").textContent = names.size;
-    $("metric-active-value").textContent = sessions.filter((s) => s.status === "active").length;
-  }
   const groups = new Map();
   for (const session of sessions) {
     const key = session.candidate_name.toLowerCase();
@@ -1128,7 +1121,6 @@ async function init() {
   const [info, languages] = await Promise.all([api("/api/info"), api("/api/languages")]);
   app.info = info;
   app.languages = languages;
-  $("metric-languages").textContent = languages.filter((l) => l.id !== "web").length;
   $("language-select").replaceChildren(...languages.map((l) => h("option", { value: l.id }, l.label)));
   await loadIdentity();
   window.addEventListener("hashchange", route);

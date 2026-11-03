@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy Policy · {{APP_NAME}}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/app.css?v={{VERSION}}" />
+    <script>
+      (() => {
+        const saved = localStorage.getItem("wmc:theme");
+        const dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/"><img src="/favicon.svg" alt="" /><span>{{APP_NAME}}</span></a>
+    </header>
+    <main class="legal">
+      <article class="tile static">
+        <h1>Privacy Policy</h1>
+        <p class="caption">Last updated {{LEGAL_UPDATED}}</p>
+
+        <p>{{APP_NAME}} is a live code-share IDE for technical interviews. This policy explains what we collect, why, and how to have it deleted.</p>
+
+        <h2>What we collect</h2>
+        <ul>
+          <li><strong>Interviewers (Google sign-in):</strong> your name, email address, and profile picture from Google. We request only the <code>openid</code>, <code>email</code>, and <code>profile</code> scopes. We never see your Google password, and we don't access your Gmail, Drive, contacts, or calendar.</li>
+          <li><strong>Candidates:</strong> no account is needed. We store the candidate name the interviewer typed when creating the session.</li>
+          <li><strong>Session content:</strong> files, code, and run output (stdout, stderr, exit codes) created during a session, plus a change history used to sync the editor between participants.</li>
+          <li><strong>Technical data:</strong> request logs (method, path, status, and timing). Our hosting provider may also keep standard access logs, including IP addresses.</li>
+        </ul>
+
+        <h2>How we use it</h2>
+        <ul>
+          <li>To sign interviewers in and show their name and avatar.</li>
+          <li>To run interview sessions, sync edits, execute code, and let interviewers review past sessions.</li>
+          <li>To keep the service secure and diagnose problems.</li>
+        </ul>
+        <p>We don't sell your data, show ads, or use session content to train models.</p>
+
+        <h2>Cookies and local storage</h2>
+        <p>We use one signed session cookie to keep interviewers signed in. Your browser's local storage holds your theme preference, the Live refresh setting, and a candidate's session access token. We don't use tracking or advertising cookies.</p>
+
+        <h2>Where data is stored</h2>
+        <p>The app runs on Vercel in the United States (us-east). Data is stored in a Supabase Postgres database. Code runs in temporary server workspaces that are discarded when the server instance is recycled.</p>
+
+        <h2>Who can see a session</h2>
+        <p>Only the interviewer who created a session, and anyone holding its PIN while the session is active, can open it. Ending a session disables its PIN. The interviewer can still review it afterward.</p>
+
+        <h2>Retention and deletion</h2>
+        <p>Sessions are kept until the interviewer asks us to delete them. To delete your account data or a specific session, or to request a copy of your data, <a href="{{CONTACT_URL}}" target="_blank" rel="noopener">contact us</a>. We delete the requested data within 30 days. You can also revoke this app's access to your Google account at any time at <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>.</p>
+
+        <h2>Children</h2>
+        <p>{{APP_NAME}} is meant for professional hiring and isn't directed at children under 13.</p>
+
+        <h2>Changes</h2>
+        <p>If this policy changes, we'll update the date above.</p>
+
+        <h2>Contact</h2>
+        <p>Questions or requests: <a href="{{CONTACT_URL}}" target="_blank" rel="noopener">{{CONTACT_URL}}</a></p>
+      </article>
+    </main>
+    <footer class="site-footer">
+      <a href="/">Home</a>
+      <a href="/privacy" aria-current="page">Privacy</a>
+      <a href="/terms">Terms</a>
+    </footer>
+  </body>
+</html>
