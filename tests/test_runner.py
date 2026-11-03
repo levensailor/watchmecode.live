@@ -41,6 +41,16 @@ def test_python_plan_uses_uv_with_detected_packages(settings, tmp_path):
     assert argv[-1] == "main.py"
 
 
+def test_python_plan_falls_back_to_pip_without_uv(settings, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.runner.uv_binary", lambda: None)
+    plan = CodeRunner(settings).plan("main.py", {"main.py": "import requests\n"}, tmp_path)
+    install, execute = plan.steps
+    assert install.argv[1:4] == ["-m", "pip", "install"]
+    assert install.argv[-1] == "requests"
+    assert execute.argv[-1] == "main.py"
+    assert execute.env["PYTHONPATH"].endswith("pydeps")
+
+
 def test_run_python_snippet(candidate, created_session):
     result = run(candidate, created_session["id"], "hello.py", "print(sum(range(5)))\n")
     assert result["exit_code"] == 0

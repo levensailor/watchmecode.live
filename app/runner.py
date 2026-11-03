@@ -60,6 +60,7 @@ class Step:
     argv: list[str]
     timeout: int
     label: str = ""
+    env: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -218,9 +219,19 @@ class CodeRunner:
                 elif has_inline_metadata:
                     plan.notes.append("uv: using PEP 723 inline metadata")
                 plan.steps.append(Step(argv, timeout + (install_timeout if packages or has_inline_metadata else 0)))
+            elif packages:
+                deps = self.tools / "pydeps"
+                plan.notes.append(f"pip: auto-installing {', '.join(packages)} (uv unavailable)")
+                plan.steps.append(
+                    Step(
+                        [sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
+                         "--target", str(deps), *packages],
+                        install_timeout,
+                        "install",
+                    )
+                )
+                plan.steps.append(Step([sys.executable, entry_path], timeout, env={"PYTHONPATH": str(deps)}))
             else:
-                if packages:
-                    plan.notes.append("uv is not available; third-party imports will not be installed")
                 plan.steps.append(Step([sys.executable, entry_path], timeout))
 
         elif lang in (LanguageId.javascript, LanguageId.typescript):
@@ -333,7 +344,7 @@ class CodeRunner:
             proc = subprocess.Popen(
                 step.argv,
                 cwd=workdir,
-                env=env,
+                env={**env, **step.env},
                 stdin=subprocess.DEVNULL,
                 stdout=out,
                 stderr=err,

@@ -10,7 +10,6 @@ dependencies = [
     "psycopg[binary]>=3.3.7",
     "pydantic>=2.14.2",
     "python-dotenv>=1.2.4",
-    "uv>=0.13.7",
     "uvicorn>=0.54.0",
 ]
 
