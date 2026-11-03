@@ -7,6 +7,5 @@
       "maxDuration": 60,
       "excludeFiles": "{.venv,tests,docs,logs,node_modules,frontend}/**"
     }
-  },
-  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+  }
 }
