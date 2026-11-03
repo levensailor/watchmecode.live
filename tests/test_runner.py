@@ -50,6 +50,11 @@ def test_python_plan_falls_back_to_pip_without_uv(settings, tmp_path, monkeypatc
     assert execute.argv[-1] == "main.py"
     assert execute.env["PYTHONPATH"].endswith("pydeps")
 
+    (runner_deps := tmp_path / "runs" / "_tools" / "pydeps" / "requests-2.0.0.dist-info").mkdir(parents=True)
+    assert runner_deps.exists()
+    cached = CodeRunner(settings).plan("main.py", {"main.py": "import requests\n"}, tmp_path)
+    assert len(cached.steps) == 1
+
 
 def test_run_python_snippet(candidate, created_session):
     result = run(candidate, created_session["id"], "hello.py", "print(sum(range(5)))\n")

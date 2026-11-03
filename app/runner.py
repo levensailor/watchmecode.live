@@ -127,6 +127,15 @@ def detect_python_packages(sources: dict[str, str]) -> list[str]:
     return sorted(p for p in packages if SAFE_PACKAGE.match(p))
 
 
+def _normalize_dist(name: str) -> str:
+    return re.sub(r"[-_.]+", "_", name).lower()
+
+
+def missing_pip_packages(target: Path, packages: list[str]) -> list[str]:
+    installed = {_normalize_dist(p.name.split("-")[0]) for p in target.glob("*.dist-info")} if target.exists() else set()
+    return [pkg for pkg in packages if _normalize_dist(pkg) not in installed]
+
+
 def detect_js_packages(sources: dict[str, str]) -> list[str]:
     packages: set[str] = set()
     for path, code in sources.items():
@@ -221,15 +230,17 @@ class CodeRunner:
                 plan.steps.append(Step(argv, timeout + (install_timeout if packages or has_inline_metadata else 0)))
             elif packages:
                 deps = self.tools / "pydeps"
-                plan.notes.append(f"pip: auto-installing {', '.join(packages)} (uv unavailable)")
-                plan.steps.append(
-                    Step(
-                        [sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
-                         "--target", str(deps), *packages],
-                        install_timeout,
-                        "install",
+                missing = missing_pip_packages(deps, packages)
+                if missing:
+                    plan.notes.append(f"pip: auto-installing {', '.join(missing)} (uv unavailable)")
+                    plan.steps.append(
+                        Step(
+                            [sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
+                             "--target", str(deps), *missing],
+                            install_timeout,
+                            "install",
+                        )
                     )
-                )
                 plan.steps.append(Step([sys.executable, entry_path], timeout, env={"PYTHONPATH": str(deps)}))
             else:
                 plan.steps.append(Step([sys.executable, entry_path], timeout))
