@@ -176,11 +176,18 @@ button, input, select { font: inherit; color: inherit; }
 
 .portal-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .portal-head .input { max-width: 280px; }
-.candidates { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-.candidate { border-radius: 20px; background: var(--inset); padding: 16px; display: grid; gap: 10px; align-content: start; }
-.candidate h3 { margin: 0; font-size: 17px; display: flex; justify-content: space-between; align-items: baseline; }
-.session-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 10px 12px; border-radius: var(--radius-inner); background: var(--tile); }
+.candidates { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr)); gap: 12px; }
+.candidate { border-radius: 20px; background: var(--inset); padding: 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.candidate h3 { margin: 0; font-size: 17px; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; min-width: 0; }
+.candidate-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.candidate h3 .caption { flex-shrink: 0; white-space: nowrap; }
+.session-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radius-inner); background: var(--tile); min-width: 0; }
+.session-info { display: grid; gap: 2px; min-width: 0; }
 .session-row .meta { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+.session-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.session-actions .chip { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.session-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.session-buttons .btn { white-space: nowrap; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .chip.ended { background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--muted); }
 .empty { color: var(--muted); font-size: 14px; padding: 18px; text-align: center; border: 1px dashed var(--hairline); border-radius: 16px; }
@@ -343,4 +350,5 @@ dialog .row { justify-content: flex-end; margin-top: 16px; }
   .topbar { padding: 0 14px; gap: 10px; }
   .bento { padding: 0 14px; }
   #signin-btn { display: none; }
+  .session-row { flex-direction: column; align-items: stretch; }
 }
