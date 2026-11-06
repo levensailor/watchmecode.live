@@ -122,7 +122,7 @@ def app_info(request: Request, repo: Repository = Depends(get_repo)) -> AppInfoO
         app_name=settings.app_name,
         tagline=settings.app_tagline,
         author=settings.app_author,
-        google_enabled=settings.google_configured,
+        google_enabled=settings.google_configured or (settings.tenant_mode == "dedicated" and bool(settings.auth_hub_url)),
         storage=repo.kind,
         workspace=workspace_brief(request),
     )

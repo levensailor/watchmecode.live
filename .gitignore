@@ -19,3 +19,4 @@ logs/
 .pytest_cache/
 /site/
 .vercel
+.dedicated/

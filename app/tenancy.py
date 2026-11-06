@@ -180,18 +180,25 @@ class TenantRegistry:
         if host.endswith(f".{root}"):
             label = host[: -len(root) - 1]
             tenant = self.tenant(label) if "." not in label else None
-            if tenant and tenant["status"] != "deleted":
+            if tenant and self.served_here(tenant):
                 return HostMatch("tenant", tenant, host)
             return HostMatch("unknown", None, host)
         tenant = self.platform.get_tenant_by_domain(host)
-        if tenant:
+        if tenant and self.served_here(tenant):
             return HostMatch("tenant", tenant, host)
         # Preview deployments and other hosts get the product site.
         return HostMatch("apex", self.default_tenant(), host)
 
+    @staticmethod
+    def served_here(tenant: dict[str, Any]) -> bool:
+        """Dedicated (Enterprise) workspaces run on their own deployment; the shared one never serves them."""
+        return tenant["status"] != "deleted" and tenant.get("deployment") != "dedicated"
+
     # Repositories -----------------------------------------------------------
 
     def repo_for(self, tenant: dict[str, Any] | None) -> Repository:
+        if tenant is not None and not self.served_here(tenant):
+            raise LookupError(f"Workspace {tenant['slug']} is not served by this deployment")
         if tenant is None or (
             tenant["slug"] == self.settings.tenant_slug and tenant["schema_name"] == self.settings.db_schema
         ):
@@ -225,6 +232,8 @@ class TenantRegistry:
     def migrate_all(self, force: bool = False) -> list[dict[str, Any]]:
         results = []
         for tenant in self.platform.list_tenants() if self.platform else []:
+            if not self.served_here(tenant):
+                continue
             repo = self.repo_for(tenant) if tenant["slug"] != self.settings.tenant_slug else self.default_repo
             changed = self._migrate(tenant, repo, force=force)
             results.append({"slug": tenant["slug"], "schema": tenant["schema_name"], "migrated": changed})
@@ -258,7 +267,7 @@ class TenantRegistry:
     def active_tenants(self) -> list[dict[str, Any]]:
         if not self.platform:
             return [None]  # type: ignore[list-item]
-        return [t for t in self.platform.list_tenants() if t["status"] not in ("deleted", "canceled")]
+        return [t for t in self.platform.list_tenants() if t["status"] != "canceled" and self.served_here(t)]
 
     # Access -----------------------------------------------------------------
 
@@ -324,7 +333,7 @@ class TenantMiddleware:
         if match.kind == "apex":
             scoped = api_key_workspace(headers.get("authorization", ""))
             tenant = await run_in_threadpool(self.registry.tenant, scoped) if scoped else None
-            if tenant is not None and tenant["status"] != "deleted":
+            if tenant is not None and self.registry.served_here(tenant):
                 match = HostMatch("tenant", tenant, match.host)
         if match.kind == "unknown":
             path = scope.get("path", "")
