@@ -4,6 +4,7 @@ Feature changes, newest first. Times are America/New_York.
 
 ## 2026-11-06
 
+- **13:45** Add the AI prompt lab: candidates write the prompt they'd give a coding agent, and an AI reviewer on Vercel AI Gateway mocks that agent, flags gaps and risky assumptions, and scores intent, guardrails, and context.
 - **12:10** Document workspaces, the sign-in hub, billing, the sandbox runner, and dedicated instances, and update the privacy policy and terms for workspaces, Stripe billing, and sandboxes.
 - **11:55** Add the SQL lab (CSV files become tables, results print as tables), the React lab (live preview with no build step), and a shared Excalidraw whiteboard saved with the session, plus a Vercel Sandbox runner (`SANDBOX_BACKEND=sandbox`) that runs every language in a per-session microVM.
 - **11:10** Provision dedicated Enterprise instances (Vercel project, Supabase or Neon database, domain, hub registration) with a dry-run-first script and runbook; the shared deployment refuses to serve dedicated workspaces.

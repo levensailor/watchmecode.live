@@ -21,6 +21,7 @@ class LanguageId(StrEnum):
     sql = "sql"
     react = "react"
     whiteboard = "whiteboard"
+    prompt = "prompt"
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class Language:
     extensions: tuple[str, ...]
     entry: str
     starter: dict[str, str]
+    filenames: tuple[str, ...] = ()
 
 
 PYTHON_STARTER = '''import requests
@@ -284,7 +286,38 @@ Design a URL shortener that handles 10,000 writes and 1,000,000 reads per second
 - Scaling and failure modes
 '''
 
-LAB_LANGUAGE_IDS = frozenset({LanguageId.sql, LanguageId.react, LanguageId.whiteboard})
+PROMPT_BRIEF = '''# Prompt lab: rate limiting
+
+You're pairing with an AI coding agent (Cursor, Claude Code, Codex, …) on a real codebase.
+Write the prompt you would give it in **prompt.md**, then press **Run**. An AI reviewer plays the
+agent, shows what it would do with your prompt, and points out gaps.
+
+## The task
+
+Our public REST API (`POST /v1/pads`, `GET /v1/pads/{id}`) has no rate limiting. Last week one customer's
+script sent 40,000 requests in ten minutes and slowed everyone down.
+
+Get an agent to add per-API-key rate limiting.
+
+## What you know
+
+- Python 3.12, FastAPI, deployed on Vercel serverless functions (no long-lived process memory).
+- Postgres (Supabase) is available. There is no Redis today.
+- API keys look like `wmc_<workspace>.<token>` and are validated in `app/public_api.py`.
+- Customers on the Team plan were promised "fair use"; Enterprise contracts mention 600 requests/minute.
+- The Ashby integration calls the same API in bursts when interview schedules change.
+- Our docs live in `docs/api.md`; clients currently get no rate-limit headers.
+
+## What we look for
+
+A clear intent and definition of done, guardrails (what the agent must not do or break), and the
+context, tools, MCP servers, or integrations the agent needs to do it right.
+'''
+
+PROMPT_STARTER = '''Add rate limiting to the API so customers can't spam it.
+'''
+
+LAB_LANGUAGE_IDS = frozenset({LanguageId.sql, LanguageId.react, LanguageId.whiteboard, LanguageId.prompt})
 
 LANGUAGES: dict[LanguageId, Language] = {
     lang.id: lang
@@ -326,13 +359,22 @@ LANGUAGES: dict[LanguageId, Language] = {
             "board.excalidraw",
             {"board.excalidraw": WHITEBOARD_SCENE, "notes.md": WHITEBOARD_NOTES},
         ),
+        Language(
+            LanguageId.prompt,
+            "Prompt lab (AI)",
+            (".prompt.md",),
+            "prompt.md",
+            {"BRIEF.md": PROMPT_BRIEF, "prompt.md": PROMPT_STARTER},
+            filenames=("prompt.md",),
+        ),
     )
 }
 
 
 def language_for_path(path: str) -> Language | None:
     lowered = path.lower()
+    name = lowered.rsplit("/", 1)[-1]
     for lang in LANGUAGES.values():
-        if lowered.endswith(lang.extensions):
+        if name in lang.filenames or lowered.endswith(lang.extensions):
             return lang
     return None

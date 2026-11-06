@@ -1226,6 +1226,7 @@ const ide = {
     if (this.running) { this.rerunQueued = true; return; }
     this.running = true;
     $("run-btn").disabled = true;
+    if (this.state.session.language === "prompt" && !live) toast("The AI agent is reviewing your prompt…");
     try {
       await this.flushAll();
       const result = await api(`/api/sessions/${this.sessionId}/run`, { method: "POST", sessionId: this.sessionId, body: { entry_path: entry } });

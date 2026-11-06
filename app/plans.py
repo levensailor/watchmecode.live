@@ -22,6 +22,7 @@ TEAM_FEATURES = STARTER_FEATURES | {
     "unlimited_take_home",
     "labs_browser",
     "labs_sandbox",
+    "labs_ai",
     "ai_summary",
     "branding",
 }
@@ -34,13 +35,14 @@ FEATURE_LABELS = {
     "unlimited_take_home": "unlimited take-homes",
     "labs_browser": "browser labs",
     "labs_sandbox": "sandbox labs",
+    "labs_ai": "the AI prompt lab",
     "ai_summary": "AI evaluation summaries",
     "branding": "custom branding",
     "sso": "SSO",
     "custom_domain": "a custom domain",
 }
 
-LAB_LANGUAGES = {"sql": "labs_browser", "react": "labs_browser", "whiteboard": "labs_browser"}
+LAB_LANGUAGES = {"sql": "labs_browser", "react": "labs_browser", "whiteboard": "labs_browser", "prompt": "labs_ai"}
 SANDBOX_CREDITS = 2
 
 
@@ -129,7 +131,8 @@ def can_create_sessions(settings: Settings, tenant: dict[str, Any] | None) -> bo
 
 def upgrade_message(feature: str) -> str:
     plan = PLANS[MINIMUM_PLAN.get(feature, "team")].name
-    return f"{FEATURE_LABELS.get(feature, feature).capitalize()} is included in the {plan} plan."
+    label = FEATURE_LABELS.get(feature, feature)
+    return f"{label[:1].upper()}{label[1:]} is included in the {plan} plan."
 
 
 def require_feature(feature: str):

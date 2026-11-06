@@ -29,6 +29,7 @@ Candidate   → ae.watchmecode.live → 482913 → Join · edit main.py · ▶ R
 | Take-homes | Timed, solo assessments with a Submit button, started from Ashby's interview plan. |
 | Public API | `POST /v1/pads` returns a candidate join link, so any scheduler or ATS can create interviews. |
 | Labs | SQL (CSV files become tables), React with live preview and no build step, and a shared Excalidraw whiteboard. |
+| Prompt lab (AI) | Candidates write the prompt they'd give a coding agent. An AI reviewer on Vercel AI Gateway plays that agent and scores intent, guardrails, and context (MCP servers, integrations, files). |
 | Sandbox runner | `SANDBOX_BACKEND=sandbox` runs all ten languages in a per-session Vercel Sandbox microVM. |
 | Workspaces | Each customer gets `<slug>.watchmecode.live` with its own Postgres schema, members, and sign-in domains. Enterprise gets a dedicated instance. |
 | Plans and billing | 14-day trial, Starter, Team, and Enterprise; Stripe Checkout, Customer Portal, and metered interview credits. |
@@ -109,6 +110,7 @@ All settings come from `.env` locally and from Vercel environment variables in p
 | `TENANT_MODE=dedicated`, `TENANT_SLUG`, `AUTH_HUB_URL`, `HANDOFF_PUBLIC_KEY` | Dedicated Enterprise instances (set by `scripts/provision_dedicated.py`) |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICES` | Billing; `scripts/stripe_setup.py --apply` creates prices, the meter, and the webhook |
 | `SANDBOX_BACKEND`, `SANDBOX_SESSION_MINUTES` | `sandbox` runs code in Vercel Sandbox microVMs (default `local`) |
+| `AI_GATEWAY_MODEL`, `AI_GATEWAY_FALLBACK_MODEL` | Prompt lab reviewer models (defaults `anthropic/claude-sonnet-5.5`, then `google/gemini-2.5-flash` when the first isn't available to the team). Auth uses the Vercel OIDC token, or `AI_GATEWAY_API_KEY` if set |
 | `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | Only for non-interactive CLI deploys |
 
 Google's authorized redirect URIs must include both:

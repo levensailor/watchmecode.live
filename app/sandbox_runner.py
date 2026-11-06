@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 ROOT = "/vercel/sandbox"
 WORKDIR = f"{ROOT}/work"
 MARKERS = f"{ROOT}/.wmc"
-LOCAL_LANGUAGES = {LanguageId.web, LanguageId.react, LanguageId.whiteboard, LanguageId.sql}
+LOCAL_LANGUAGES = {LanguageId.web, LanguageId.react, LanguageId.whiteboard, LanguageId.sql, LanguageId.prompt}
 PRESERVED = ("node_modules", ".build", ".wmc")
 TOOLCHAINS: dict[LanguageId, tuple[str, ...]] = {
     LanguageId.java: ("default-jdk-headless",),

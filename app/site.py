@@ -73,6 +73,7 @@ LABS: tuple[dict[str, str], ...] = (
     {"name": "SQL lab", "status": "Shipped", "body": "Seed tables from CSV files, write queries, and get formatted result tables. Great for analyst, data, and backend roles.", "language": "sql"},
     {"name": "React lab", "status": "Shipped", "body": "React components with a live preview and no build step. JSX-free with htm, so it runs instantly in the sandboxed preview.", "language": "react"},
     {"name": "System design whiteboard", "status": "Shipped", "body": "A shared Excalidraw board saved with the session, for architecture and senior interviews.", "language": "whiteboard"},
+    {"name": "Prompt engineering lab", "status": "Shipped", "body": "Candidates write the prompt they'd give an AI coding agent. An AI reviewer plays that agent, shows what it would build, and scores intent, guardrails, and context.", "language": "prompt"},
     {"name": "Sandbox runner", "status": "Shipped", "body": "Every language in an isolated Firecracker microVM on Vercel Sandbox, with installs cached for the session.", "language": ""},
     {"name": "Project and API labs", "status": "Next", "body": "Multi-file repos with a terminal, hidden tests, and a server on an exposed port.", "language": ""},
     {"name": "Linux, Docker, and cloud labs", "status": "Enterprise", "body": "Broken-system SRE scenarios, Kubernetes, and short-lived AWS accounts.", "language": ""},

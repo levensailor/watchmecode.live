@@ -9,6 +9,7 @@ Every major vendor (CoderPad, HackerRank, CodeSignal, Codility, Qualified, DevSk
 | SQL | Analyst, data, and backend roles | HackerRank SQL, CodeSignal DB tasks | Server SQLite seeded from CSV files (works on Vercel); PGlite or DuckDB-WASM later | S | **Shipped** |
 | Frontend framework (React) | Frontend roles without build tooling | CoderPad Projects, HackerRank front-end | Browser: React through esm.sh import maps in the sandboxed preview; Sandpack later for Vue or Next | S | **Shipped** |
 | System design whiteboard | Senior and architecture interviews | CoderPad drawing mode, HackerRank whiteboard | Browser: Excalidraw (MIT), saved as a session file | S | **Shipped** |
+| Prompt engineering (vibe coding) | AI-era hiring: can the candidate brief an agent well? | CoderPad AI, HackerRank AI interviewer | Vercel AI Gateway: an AI reviewer mocks the agent and scores intent, guardrails, and context/MCP | S | **Shipped** |
 | Multi-language runner | Java, Go, C#, C++, and more on the hosted product | All vendors | Vercel Sandbox microVM | M | **Shipped** (behind `SANDBOX_BACKEND=sandbox`) |
 | Project/repo lab | Realistic multi-file work, package installs, tests | CoderPad Projects, CodeSignal Filesystem, Codility | Vercel Sandbox with file sync, a terminal (ttyd on an exposed port), hidden tests | M | Next |
 | Backend/API lab | Debugging and building endpoints | HackerRank Projects, DevSkiller RealLifeTesting | Vercel Sandbox with a server on an exposed port and an HTTP client panel | M | Next |

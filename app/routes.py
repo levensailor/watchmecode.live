@@ -20,7 +20,8 @@ from app.auth import (
 from app import plans
 from app.integrations import hooks
 from app.tenancy import apex_url, current_site, current_tenant
-from app.languages import LANGUAGES
+from app.labs import prompt_lab
+from app.languages import LANGUAGES, LanguageId, language_for_path
 from app.repository import PathConflictError, PinExhaustedError, RecordingConflictError, Repository, utcnow
 from app.results import build_zip, zip_filename
 from app.runner import CodeRunner
@@ -388,13 +389,19 @@ def rename_file(
 def run_code(
     session_id: str,
     body: RunIn,
+    request: Request,
     client_id: ClientId = None,
     who: Participant = Depends(participant),
     repo: Repository = Depends(get_repo),
     runner: CodeRunner = Depends(get_runner),
 ) -> dict:
     files = {f["path"]: f["content"] for f in repo.list_files(session_id)}
-    result = runner.run(session_id, body.entry_path, files)
+    language = language_for_path(body.entry_path)
+    if language is not None and language.id == LanguageId.prompt and body.entry_path in files:
+        plans.check_language(request.app.state.settings, language.id.value)
+        result = prompt_lab.review_prompt(request.app, body.entry_path, files)
+    else:
+        result = runner.run(session_id, body.entry_path, files)
     return repo.add_run(session_id, result.as_dict(), who.label, client_id)
 
 

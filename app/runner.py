@@ -313,6 +313,9 @@ class CodeRunner:
         elif lang == LanguageId.sql:
             plan.steps.append(Step([sys.executable, str(SQL_LAB_SCRIPT), entry_path], timeout))
 
+        elif lang == LanguageId.prompt:
+            plan.notes.append("Prompts are reviewed by the AI agent when you press Run in the IDE.")
+
         elif lang == LanguageId.whiteboard:
             plan.notes.append("Whiteboards save with the session; there's nothing to run.")
 

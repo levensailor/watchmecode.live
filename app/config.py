@@ -87,6 +87,11 @@ class Settings:
     stripe_meter_event: str = "interview_credits"
     sandbox_backend: str = "local"
     sandbox_session_minutes: int = 60
+    ai_gateway_base_url: str = "https://ai-gateway.vercel.sh/v1"
+    ai_gateway_model: str = "anthropic/claude-sonnet-5.5"
+    ai_gateway_fallback_model: str = "google/gemini-2.5-flash"
+    ai_gateway_api_key: str = ""
+    ai_review_timeout_seconds: float = 50.0
     vercel_token: str = ""
     vercel_team_id: str = ""
     vercel_project_id: str = ""
@@ -172,6 +177,11 @@ def load_settings() -> Settings:
         stripe_meter_event=_env("STRIPE_METER_EVENT", defaults.stripe_meter_event),
         sandbox_backend=_env("SANDBOX_BACKEND", defaults.sandbox_backend).lower(),
         sandbox_session_minutes=_env_int("SANDBOX_SESSION_MINUTES", defaults.sandbox_session_minutes),
+        ai_gateway_base_url=_env("AI_GATEWAY_BASE_URL", defaults.ai_gateway_base_url),
+        ai_gateway_model=_env("AI_GATEWAY_MODEL", defaults.ai_gateway_model),
+        ai_gateway_fallback_model=_env("AI_GATEWAY_FALLBACK_MODEL", defaults.ai_gateway_fallback_model),
+        ai_gateway_api_key=_env("AI_GATEWAY_API_KEY"),
+        ai_review_timeout_seconds=float(_env("AI_REVIEW_TIMEOUT_SECONDS") or defaults.ai_review_timeout_seconds),
         vercel_token=_env("VERCEL_TOKEN"),
         vercel_team_id=_env("VERCEL_TEAM_ID"),
         vercel_project_id=_env("VERCEL_PROJECT_ID"),
