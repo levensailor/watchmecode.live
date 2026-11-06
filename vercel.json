@@ -7,5 +7,6 @@
       "maxDuration": 60,
       "excludeFiles": "{.venv,tests,docs,logs,node_modules,frontend}/**"
     }
-  }
+  },
+  "crons": [{ "path": "/api/cron/modernloop", "schedule": "*/10 * * * *" }]
 }

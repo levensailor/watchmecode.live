@@ -5,15 +5,18 @@ from __future__ import annotations
 import html
 import logging
 import time
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import auth, routes
+from app import auth, orgs, public_api, routes
 from app.config import PROJECT_ROOT, Settings, get_settings
+from app.crypto import Vault
+from app.integrations import ashby, modernloop
 from app.logging_config import setup_logging
 from app.repository import Repository
 from app.runner import CodeRunner
@@ -58,6 +61,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.oauth = auth.build_oauth(settings)
     app.state.repo = repo
     app.state.runner = CodeRunner(settings)
+    app.state.vault = Vault(settings)
+    app.state.http_transport = None
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
@@ -79,10 +84,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(routes.router)
+    app.include_router(orgs.router)
+    app.include_router(public_api.router)
+    app.include_router(ashby.router)
+    app.include_router(ashby.partner_router)
+    app.include_router(modernloop.router)
 
     @app.get("/api/health", tags=["meta"])
     def health() -> dict[str, str]:
         return {"status": "ok", "storage": repo.kind}
+
+    @app.get("/j/{token}", include_in_schema=False)
+    def join_link(token: str) -> RedirectResponse:
+        return RedirectResponse(f"/#/j/{quote(token, safe='')}", status_code=302)
 
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

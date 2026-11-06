@@ -50,9 +50,13 @@ class AppInfoOut(BaseModel):
     storage: Literal["sqlite", "postgres"]
 
 
+SessionMode = Literal["live", "take_home"]
+
+
 class SessionCreate(BaseModel):
     candidate_name: str = Field(min_length=1, max_length=80, description="Candidate's display name")
     language: LanguageId = Field(default=LanguageId.python, description="Starter language")
+    org_id: str | None = Field(default=None, max_length=64, description="Organization that owns the session")
 
 
 class SessionOut(BaseModel):
@@ -64,6 +68,12 @@ class SessionOut(BaseModel):
     status: Literal["active", "ended"]
     created_at: str
     updated_at: str
+    org_id: str | None = None
+    mode: SessionMode = "live"
+    title: str | None = None
+    time_limit_minutes: int | None = None
+    started_at: str | None = None
+    submitted_at: str | None = None
 
 
 class SessionPublic(BaseModel):
@@ -71,6 +81,11 @@ class SessionPublic(BaseModel):
     candidate_name: str
     language: LanguageId
     status: Literal["active", "ended"]
+    mode: SessionMode = "live"
+    title: str | None = None
+    time_limit_minutes: int | None = None
+    started_at: str | None = None
+    submitted_at: str | None = None
 
 
 class FileOut(BaseModel):
@@ -170,3 +185,179 @@ class RecordingPlayback(RecordingOut):
     session: SessionPublic
     initial_files: list[PlaybackFile]
     events: list[EventOut]
+
+
+# Organizations ----------------------------------------------------------------
+
+OrgRole = Literal["admin", "interviewer"]
+EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+
+class OrgCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+
+
+class OrgOut(BaseModel):
+    id: str
+    slug: str
+    name: str
+    created_by: str
+    created_at: str
+    role: OrgRole | None = None
+
+
+class MemberIn(BaseModel):
+    email: str = Field(pattern=EMAIL_PATTERN, max_length=254)
+    role: OrgRole = "interviewer"
+
+
+class MemberOut(BaseModel):
+    email: str
+    role: OrgRole
+    created_at: str
+
+
+class ApiKeyCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class ApiKeyOut(BaseModel):
+    id: str
+    name: str
+    prefix: str
+    created_by: str
+    created_at: str
+    last_used_at: str | None = None
+
+
+class ApiKeyCreated(ApiKeyOut):
+    key: str = Field(description="Shown once. Store it securely.")
+
+
+class AshbySettings(BaseModel):
+    interview_stage_ids: list[str] = Field(default_factory=list, description="Only create sessions for these stages; empty means all")
+    default_language: LanguageId = LanguageId.python
+    candidate_link_field_id: str | None = Field(default=None, max_length=64, description="Candidate custom field (Short answer) for the join link")
+    post_link_note: bool = True
+    push_results_note: bool = True
+    upload_files: bool = True
+    add_completed_assessment: bool = False
+
+
+class AshbyConnect(BaseModel):
+    api_key: str | None = Field(default=None, min_length=8, max_length=200, description="Omit to keep the stored key")
+    settings: AshbySettings = Field(default_factory=AshbySettings)
+    rotate_webhook_secret: bool = False
+
+
+class ModernLoopSettings(BaseModel):
+    job_stage_ids: list[str] = Field(default_factory=list, description="Only create sessions for these job stages; empty means all")
+    default_language: LanguageId = LanguageId.python
+    skip_ashby_candidates: bool = True
+
+
+class ModernLoopConnect(BaseModel):
+    api_token: str | None = Field(default=None, min_length=8, max_length=400, description="Omit to keep the stored token")
+    settings: ModernLoopSettings = Field(default_factory=ModernLoopSettings)
+
+
+class IntegrationOut(BaseModel):
+    provider: Literal["ashby", "modernloop"]
+    connected: bool
+    enabled: bool = False
+    settings: dict[str, Any] = Field(default_factory=dict)
+    webhook_url: str | None = None
+    partner_base_url: str | None = None
+    last_event_at: str | None = None
+    last_synced_at: str | None = None
+    last_error: str | None = None
+
+
+class WebhookSecretOut(BaseModel):
+    webhook_url: str
+    webhook_secret: str
+
+
+class OrgDetail(OrgOut):
+    members: list[MemberOut]
+    api_keys: list[ApiKeyOut]
+    integrations: list[IntegrationOut]
+
+
+class TemplateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=2000)
+    language: LanguageId = LanguageId.python
+    files: dict[str, str] | None = Field(default=None, description="Starter files; omit to use the language template")
+    time_limit_minutes: int | None = Field(default=60, ge=5, le=24 * 60)
+
+
+class TemplateOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    language: LanguageId
+    files: dict[str, str]
+    time_limit_minutes: int | None = None
+    created_by: str
+    created_at: str
+    updated_at: str
+
+
+class SyncResult(BaseModel):
+    created: int
+    ended: int
+    skipped: int
+    errors: list[str] = Field(default_factory=list)
+
+
+# Candidate join links and public API ----------------------------------------------
+
+
+class JoinLinkIn(BaseModel):
+    token: str = Field(min_length=10, max_length=600)
+
+
+class PadCreate(BaseModel):
+    candidate_name: str = Field(min_length=1, max_length=80)
+    candidate_email: str | None = Field(default=None, pattern=EMAIL_PATTERN, max_length=254)
+    title: str | None = Field(default=None, max_length=200)
+    language: LanguageId = LanguageId.python
+    mode: SessionMode = "live"
+    time_limit_minutes: int | None = Field(default=None, ge=5, le=24 * 60)
+    interviewer_email: str | None = Field(default=None, pattern=EMAIL_PATTERN, max_length=254)
+    files: dict[str, str] | None = Field(default=None, description="Starter files; omit to use the language template")
+
+
+class ResultSummary(BaseModel):
+    session_id: str
+    candidate_name: str
+    title: str | None = None
+    language: LanguageId
+    mode: SessionMode
+    status: Literal["active", "ended"]
+    created_at: str
+    ended_at: str | None = None
+    duration_minutes: float | None = None
+    file_count: int
+    run_count: int
+    last_run_exit_code: int | None = None
+    last_run_entry: str | None = None
+    last_run_output: str | None = None
+    interviewer_url: str
+    playback_url: str | None = None
+    files_url: str
+
+
+class PadOut(BaseModel):
+    id: str
+    pin: str
+    candidate_name: str
+    title: str | None = None
+    language: LanguageId
+    mode: SessionMode
+    status: Literal["active", "ended"]
+    join_url: str
+    interviewer_url: str
+    created_at: str
+    results: ResultSummary | None = None

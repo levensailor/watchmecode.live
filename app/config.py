@@ -59,6 +59,15 @@ class Settings:
     participant_token_max_age: int = 60 * 60 * 12
     node_version: str = "default"
     is_vercel: bool = False
+    integration_encryption_key: str = ""
+    join_link_max_age: int = 60 * 60 * 24 * 30
+    ashby_api_base: str = "https://api.ashbyhq.com"
+    ashby_partner_id: str = "watchmecode"
+    modernloop_api_base: str = "https://api.modernloop.io"
+    resend_api_key: str = ""
+    email_from: str = ""
+    cron_secret: str = ""
+    http_timeout_seconds: float = 15.0
 
     @property
     def google_configured(self) -> bool:
@@ -102,6 +111,14 @@ def load_settings() -> Settings:
         participant_token_max_age=_env_int("PARTICIPANT_TOKEN_MAX_AGE", defaults.participant_token_max_age),
         node_version=_env("NODE_VERSION", defaults.node_version),
         is_vercel=is_vercel,
+        integration_encryption_key=_env("INTEGRATION_ENCRYPTION_KEY"),
+        join_link_max_age=_env_int("JOIN_LINK_MAX_AGE", defaults.join_link_max_age),
+        ashby_api_base=_env("ASHBY_API_BASE", defaults.ashby_api_base),
+        ashby_partner_id=_env("ASHBY_PARTNER_ID", defaults.ashby_partner_id),
+        modernloop_api_base=_env("MODERNLOOP_API_BASE", defaults.modernloop_api_base),
+        resend_api_key=_env("RESEND_API_KEY"),
+        email_from=_env("EMAIL_FROM"),
+        cron_secret=_env("CRON_SECRET"),
     )
 
 

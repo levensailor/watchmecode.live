@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 
 from app.auth import (
     Participant,
     bearer_token,
     issue_participant_token,
+    read_join_token,
     read_participant_token,
     require_user,
     session_user,
 )
+from app.integrations import hooks
 from app.languages import LANGUAGES
-from app.repository import PathConflictError, PinExhaustedError, RecordingConflictError, Repository
+from app.repository import PathConflictError, PinExhaustedError, RecordingConflictError, Repository, utcnow
+from app.results import build_zip, zip_filename
 from app.runner import CodeRunner
 from app.schemas import (
     AppInfoOut,
@@ -27,6 +31,7 @@ from app.schemas import (
     FileRename,
     FileUpsert,
     JoinIn,
+    JoinLinkIn,
     JoinOut,
     LanguageOut,
     RecordingOut,
@@ -40,6 +45,7 @@ from app.schemas import (
     SessionPublic,
     SessionState,
 )
+from app.urls import base_url
 
 logger = logging.getLogger(__name__)
 
@@ -57,22 +63,45 @@ def get_runner(request: Request) -> CodeRunner:
 
 
 def _owned_session(repo: Repository, session_id: str, user: dict) -> dict:
+    """The session if the signed-in interviewer owns it or belongs to its organization."""
     session = repo.get_session(session_id)
-    if not session or session["interviewer_email"] != user["email"]:
+    if not session or not repo.can_access_session(session, user["email"]):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
     return session
 
 
+def time_is_up(session: dict) -> bool:
+    if session.get("mode") != "take_home" or not session.get("started_at") or not session.get("time_limit_minutes"):
+        return False
+    deadline = datetime.fromisoformat(session["started_at"]) + timedelta(minutes=session["time_limit_minutes"])
+    return datetime.now(UTC) >= deadline
+
+
+def finish_session(request: Request, session_id: str, actor_label: str, actor_email: str | None, submitted: bool = False) -> dict:
+    """End a session once, then push results to connected integrations."""
+    repo: Repository = request.app.state.repo
+    session = repo.get_session(session_id)
+    if session and session["status"] == "active":
+        if submitted:
+            repo.update_session_fields(session_id, submitted_at=utcnow())
+        session = repo.set_status(session_id, "ended", actor_label)
+        hooks.session_finished(request.app, session_id, actor_email, base_url(request.app.state.settings, request))
+    return session
+
+
 def participant(session_id: str, request: Request, repo: Repository = Depends(get_repo)) -> Participant:
-    """Allow the owning interviewer (cookie) or a candidate holding a PIN-issued token."""
+    """Allow the owning interviewer / org member (cookie) or a candidate holding a session token."""
     session = repo.get_session(session_id)
     user = session_user(request)
-    if session and user and session["interviewer_email"] == user["email"]:
+    if session and user and repo.can_access_session(session, user["email"]):
         return Participant("interviewer", user.get("name") or user["email"], session_id)
     token = bearer_token(request)
     if token:
         sid = read_participant_token(request.app.state.settings, token)
         if sid == session_id and session:
+            if session["status"] == "active" and time_is_up(session):
+                finish_session(request, session_id, session["candidate_name"], None, submitted=True)
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Time is up. Your work was submitted.")
             if session["status"] != "active":
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "This session has ended")
             return Participant("candidate", session["candidate_name"], session_id)
@@ -110,8 +139,12 @@ def list_languages() -> list[LanguageOut]:
 @router.post("/api/sessions", response_model=SessionOut, status_code=status.HTTP_201_CREATED, tags=["interviewer"])
 def create_session(body: SessionCreate, user: dict = Depends(require_user), repo: Repository = Depends(get_repo)) -> dict:
     language = LANGUAGES[body.language]
+    if body.org_id and repo.member_role(body.org_id, user["email"]) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Organization not found")
     try:
-        return repo.create_session(body.candidate_name.strip(), user["email"], language.id.value, dict(language.starter))
+        return repo.create_session(
+            body.candidate_name.strip(), user["email"], language.id.value, dict(language.starter), org_id=body.org_id
+        )
     except PinExhaustedError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
@@ -119,10 +152,11 @@ def create_session(body: SessionCreate, user: dict = Depends(require_user), repo
 @router.get("/api/sessions", response_model=list[SessionOut], tags=["interviewer"])
 def list_sessions(
     candidate_name: Annotated[str | None, Query(max_length=80)] = None,
+    org_id: Annotated[str | None, Query(max_length=64)] = None,
     user: dict = Depends(require_user),
     repo: Repository = Depends(get_repo),
 ) -> list[dict]:
-    return repo.list_sessions(user["email"], candidate_name)
+    return repo.list_sessions(user["email"], candidate_name, org_id)
 
 
 @router.get("/api/sessions/{session_id}", response_model=SessionDetail, tags=["interviewer"])
@@ -132,9 +166,21 @@ def get_session(session_id: str, user: dict = Depends(require_user), repo: Repos
 
 
 @router.post("/api/sessions/{session_id}/end", response_model=SessionOut, tags=["interviewer"])
-def end_session(session_id: str, user: dict = Depends(require_user), repo: Repository = Depends(get_repo)) -> dict:
+def end_session(
+    session_id: str, request: Request, user: dict = Depends(require_user), repo: Repository = Depends(get_repo)
+) -> dict:
     _owned_session(repo, session_id, user)
-    return repo.set_status(session_id, "ended", user.get("name") or user["email"])
+    return finish_session(request, session_id, user.get("name") or user["email"], user["email"])
+
+
+@router.get("/api/sessions/{session_id}/files.zip", tags=["interviewer"], response_class=Response)
+def download_files(session_id: str, user: dict = Depends(require_user), repo: Repository = Depends(get_repo)) -> Response:
+    session = _owned_session(repo, session_id, user)
+    return Response(
+        build_zip(repo, session_id),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_filename(session)}"'},
+    )
 
 
 @router.get("/api/sessions/{session_id}/recordings", response_model=list[RecordingOut], tags=["interviewer"])
@@ -161,12 +207,17 @@ def start_recording(session_id: str, user: dict = Depends(require_user), repo: R
 
 @router.post("/api/sessions/{session_id}/recordings/{recording_id}/stop", response_model=RecordingOut, tags=["interviewer"])
 def stop_recording(
-    session_id: str, recording_id: str, user: dict = Depends(require_user), repo: Repository = Depends(get_repo)
+    session_id: str,
+    recording_id: str,
+    request: Request,
+    user: dict = Depends(require_user),
+    repo: Repository = Depends(get_repo),
 ) -> dict:
     _owned_session(repo, session_id, user)
     recording = repo.stop_recording(session_id, recording_id, user.get("name") or user["email"])
     if not recording:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Recording not found")
+    hooks.recording_saved(request.app, session_id, recording, user["email"], base_url(request.app.state.settings, request))
     return recording
 
 
@@ -199,12 +250,41 @@ def join(body: JoinIn, request: Request, repo: Repository = Depends(get_repo)) -
     )
 
 
+@router.post("/api/join/link", response_model=JoinOut, tags=["shared"])
+def join_with_link(body: JoinLinkIn, request: Request, repo: Repository = Depends(get_repo)) -> JoinOut:
+    """Exchange a signed invite link (/j/{token}) for a session token, no PIN needed."""
+    session_id = read_join_token(request.app.state.settings, body.token)
+    session = repo.get_session(session_id) if session_id else None
+    if not session:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "This invite link is invalid or expired")
+    if session["status"] != "active":
+        raise HTTPException(status.HTTP_410_GONE, "This interview has ended")
+    logger.info("Candidate joined session %s via invite link", session["id"])
+    return JoinOut(
+        session=SessionPublic(**session),
+        token=issue_participant_token(request.app.state.settings, session["id"]),
+    )
+
+
+@router.post("/api/sessions/{session_id}/submit", response_model=SessionPublic, tags=["shared"])
+def submit_take_home(
+    session_id: str, request: Request, who: Participant = Depends(participant), repo: Repository = Depends(get_repo)
+) -> dict:
+    session = repo.get_session(session_id)
+    if session["mode"] != "take_home":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Only take-home assessments are submitted")
+    return finish_session(request, session_id, who.label, None, submitted=True)
+
+
 @router.get("/api/sessions/{session_id}/state", response_model=SessionState, tags=["shared"])
 def session_state(
-    session_id: str, who: Participant = Depends(participant), repo: Repository = Depends(get_repo)
+    session_id: str, request: Request, who: Participant = Depends(participant), repo: Repository = Depends(get_repo)
 ) -> dict:
     cursor = repo.latest_cursor(session_id)
     session = repo.get_session(session_id)
+    if who.role == "candidate" and session["mode"] == "take_home" and not session["started_at"]:
+        session = repo.update_session_fields(session_id, started_at=utcnow())
+        hooks.take_home_started(request.app, session_id)
     return {
         "session": session,
         "role": who.role,

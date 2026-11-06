@@ -66,6 +66,101 @@ CREATE TABLE IF NOT EXISTS recordings (
 
 CREATE INDEX IF NOT EXISTS recordings_session ON recordings (session_id, started_at);
 
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS org_id TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'live';
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS candidate_email TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS time_limit_minutes INTEGER;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS started_at TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS submitted_at TEXT;
+CREATE INDEX IF NOT EXISTS sessions_org ON sessions (org_id, created_at);
+
+CREATE TABLE IF NOT EXISTS organizations (
+    id         TEXT PRIMARY KEY,
+    slug       TEXT NOT NULL UNIQUE,
+    name       TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS org_members (
+    org_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+    email      TEXT NOT NULL,
+    role       TEXT NOT NULL CHECK (role IN ('admin', 'interviewer')),
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (org_id, email)
+);
+
+CREATE INDEX IF NOT EXISTS org_members_email ON org_members (email);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    id           TEXT PRIMARY KEY,
+    org_id       TEXT NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    prefix       TEXT NOT NULL,
+    key_hash     TEXT NOT NULL UNIQUE,
+    created_by   TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked_at   TEXT
+);
+
+-- Credentials and webhook secrets are encrypted (Fernet) before they reach this table.
+CREATE TABLE IF NOT EXISTS integrations (
+    org_id         TEXT NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+    provider       TEXT NOT NULL CHECK (provider IN ('ashby', 'modernloop')),
+    credentials    TEXT NOT NULL,
+    webhook_secret TEXT,
+    settings       TEXT NOT NULL DEFAULT '{}',
+    enabled        INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    last_event_at  TEXT,
+    last_synced_at TEXT,
+    last_error     TEXT,
+    PRIMARY KEY (org_id, provider)
+);
+
+CREATE TABLE IF NOT EXISTS external_links (
+    id             TEXT PRIMARY KEY,
+    org_id         TEXT NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+    session_id     TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+    provider       TEXT NOT NULL,
+    external_type  TEXT NOT NULL,
+    external_id    TEXT NOT NULL,
+    parent_id      TEXT,
+    application_id TEXT,
+    candidate_id   TEXT,
+    data           TEXT NOT NULL DEFAULT '{}',
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    UNIQUE (org_id, provider, external_type, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS external_links_session ON external_links (session_id);
+CREATE INDEX IF NOT EXISTS external_links_parent ON external_links (org_id, provider, parent_id);
+
+CREATE TABLE IF NOT EXISTS assessment_templates (
+    id                 TEXT PRIMARY KEY,
+    org_id             TEXT NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+    name               TEXT NOT NULL,
+    description        TEXT NOT NULL DEFAULT '',
+    language           TEXT NOT NULL,
+    files              TEXT NOT NULL,
+    time_limit_minutes INTEGER,
+    created_by         TEXT NOT NULL,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS assessment_templates_org ON assessment_templates (org_id, name);
+
+ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE org_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE external_links ENABLE ROW LEVEL SECURITY;
+ALTER TABLE assessment_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE runs ENABLE ROW LEVEL SECURITY;

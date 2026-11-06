@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 SESSION_USER_KEY = "user"
 TOKEN_SALT = "participant-token"
+JOIN_LINK_SALT = "join-link"
 
 router = APIRouter(tags=["auth"])
 
@@ -58,6 +59,21 @@ def issue_participant_token(settings: Settings, session_id: str) -> str:
 def read_participant_token(settings: Settings, token: str) -> str | None:
     try:
         data = _serializer(settings).loads(token, max_age=settings.participant_token_max_age)
+    except (BadSignature, SignatureExpired):
+        return None
+    return data.get("sid") if isinstance(data, dict) else None
+
+
+def issue_join_token(settings: Settings, session_id: str) -> str:
+    """Long-lived invite token for candidate join links (exchanged for a participant token)."""
+    return URLSafeTimedSerializer(settings.session_secret, salt=JOIN_LINK_SALT).dumps({"sid": session_id})
+
+
+def read_join_token(settings: Settings, token: str) -> str | None:
+    try:
+        data = URLSafeTimedSerializer(settings.session_secret, salt=JOIN_LINK_SALT).loads(
+            token, max_age=settings.join_link_max_age
+        )
     except (BadSignature, SignatureExpired):
         return None
     return data.get("sid") if isinstance(data, dict) else None

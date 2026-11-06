@@ -23,7 +23,31 @@ SQL_DIR = PROJECT_ROOT / "sql"
 LIBPQ_QUERY_PARAMS = {"sslmode", "sslrootcert", "connect_timeout", "application_name", "options", "target_session_attrs"}
 PIN_ATTEMPTS = 25
 SCHEMA_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
-SESSION_COLUMNS = "id, pin, candidate_name, interviewer_email, language, status, created_at, updated_at"
+SESSION_EXTRA_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("org_id", "TEXT"),
+    ("mode", "TEXT NOT NULL DEFAULT 'live'"),
+    ("title", "TEXT"),
+    ("candidate_email", "TEXT"),
+    ("time_limit_minutes", "INTEGER"),
+    ("started_at", "TEXT"),
+    ("submitted_at", "TEXT"),
+)
+SESSION_COLUMNS = "id, pin, candidate_name, interviewer_email, language, status, created_at, updated_at, " + ", ".join(
+    name for name, _ in SESSION_EXTRA_COLUMNS
+)
+SESSION_UPDATABLE = {"started_at", "submitted_at", "title", "candidate_email"}
+ORG_COLUMNS = "id, slug, name, created_by, created_at"
+API_KEY_COLUMNS = "id, org_id, name, prefix, created_by, created_at, last_used_at, revoked_at"
+INTEGRATION_COLUMNS = (
+    "org_id, provider, credentials, webhook_secret, settings, enabled, created_at, updated_at, "
+    "last_event_at, last_synced_at, last_error"
+)
+LINK_COLUMNS = (
+    "id, org_id, session_id, provider, external_type, external_id, parent_id, application_id, candidate_id, "
+    "data, created_at, updated_at"
+)
+TEMPLATE_COLUMNS = "id, org_id, name, description, language, files, time_limit_minutes, created_by, created_at, updated_at"
+SLUG_CHARS = re.compile(r"[^a-z0-9]+")
 RUN_COLUMNS = "id, entry_path, command, stdout, stderr, exit_code, duration_ms, created_at"
 FILE_COLUMNS = "id, path, content, updated_at"
 RECORDING_COLUMNS = "id, session_id, created_by, started_at, ended_at, start_cursor, end_cursor, initial_files"
@@ -138,6 +162,12 @@ class Repository:
             try:
                 raw.execute("PRAGMA journal_mode = WAL")
                 raw.executescript(script)
+                existing = {row[1] for row in raw.execute("PRAGMA table_info(sessions)")}
+                for name, ddl in SESSION_EXTRA_COLUMNS:
+                    if name not in existing:
+                        raw.execute(f"ALTER TABLE sessions ADD COLUMN {name} {ddl}")
+                raw.execute("CREATE INDEX IF NOT EXISTS sessions_org ON sessions (org_id, created_at)")
+                raw.commit()
             finally:
                 raw.close()
         logger.info("Schema ready (%s)", self.kind)
@@ -195,6 +225,12 @@ class Repository:
         language: str,
         files: dict[str, str],
         pin_factory: Callable[[], str] = generate_pin,
+        *,
+        org_id: str | None = None,
+        mode: str = "live",
+        title: str | None = None,
+        candidate_email: str | None = None,
+        time_limit_minutes: int | None = None,
     ) -> dict[str, Any]:
         for attempt in range(1, PIN_ATTEMPTS + 1):
             pin = pin_factory()
@@ -207,9 +243,13 @@ class Repository:
                         logger.info("PIN collision on attempt %d; retrying", attempt)
                         continue
                     conn.run(
-                        "INSERT INTO sessions (id, pin, candidate_name, interviewer_email, language, created_at, updated_at, status) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, 'active')",
-                        (session_id, pin, candidate_name, interviewer_email, language, now, now),
+                        "INSERT INTO sessions (id, pin, candidate_name, interviewer_email, language, created_at, updated_at, "
+                        "status, org_id, mode, title, candidate_email, time_limit_minutes) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)",
+                        (
+                            session_id, pin, candidate_name, interviewer_email, language, now, now,
+                            org_id, mode, title, candidate_email, time_limit_minutes,
+                        ),
                     )
                     for path, content in files.items():
                         conn.run(
@@ -233,15 +273,44 @@ class Repository:
         with self.connect() as conn:
             return conn.one(f"SELECT {SESSION_COLUMNS} FROM sessions WHERE pin = ? AND status = 'active'", (pin,))
 
-    def list_sessions(self, interviewer_email: str, candidate_name: str | None = None) -> list[dict[str, Any]]:
-        sql = f"SELECT {SESSION_COLUMNS} FROM sessions WHERE interviewer_email = ?"
-        params: list[Any] = [interviewer_email]
+    def list_sessions(
+        self, interviewer_email: str, candidate_name: str | None = None, org_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        sql = (
+            f"SELECT {SESSION_COLUMNS} FROM sessions WHERE (interviewer_email = ? "
+            "OR org_id IN (SELECT org_id FROM org_members WHERE email = ?))"
+        )
+        params: list[Any] = [interviewer_email, interviewer_email]
+        if org_id:
+            sql += " AND org_id = ?"
+            params.append(org_id)
         if candidate_name:
             sql += " AND LOWER(candidate_name) LIKE ?"
             params.append(f"%{candidate_name.lower()}%")
         sql += " ORDER BY LOWER(candidate_name), created_at DESC"
         with self.connect() as conn:
             return conn.all(sql, params)
+
+    def list_org_sessions(self, org_id: str, limit: int = 25) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            return conn.all(
+                f"SELECT {SESSION_COLUMNS} FROM sessions WHERE org_id = ? ORDER BY created_at DESC LIMIT ?", (org_id, limit)
+            )
+
+    def can_access_session(self, session: dict[str, Any], email: str) -> bool:
+        if session["interviewer_email"] == email:
+            return True
+        return bool(session.get("org_id")) and self.member_role(session["org_id"], email) is not None
+
+    def update_session_fields(self, session_id: str, **fields: Any) -> dict[str, Any] | None:
+        unknown = set(fields) - SESSION_UPDATABLE
+        if unknown:
+            raise ValueError(f"Fields not updatable: {sorted(unknown)}")
+        if fields:
+            assignments = ", ".join(f"{name} = ?" for name in fields)
+            with self.connect() as conn:
+                conn.run(f"UPDATE sessions SET {assignments} WHERE id = ?", (*fields.values(), session_id))
+        return self.get_session(session_id)
 
     def set_status(self, session_id: str, status: str, actor: str) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -435,3 +504,318 @@ class Repository:
         for row in rows:
             row["id"] = int(row["id"])
         return rows
+
+    def run_count(self, session_id: str) -> int:
+        with self.connect() as conn:
+            row = conn.one("SELECT COUNT(*) AS n FROM runs WHERE session_id = ?", (session_id,))
+        return int(row["n"]) if row else 0
+
+    # Organizations ----------------------------------------------------------
+
+    def create_org(self, name: str, creator_email: str) -> dict[str, Any]:
+        base = SLUG_CHARS.sub("-", name.lower()).strip("-")[:40] or "org"
+        now = utcnow()
+        org_id = uuid.uuid4().hex
+        for attempt in range(PIN_ATTEMPTS):
+            slug = base if attempt == 0 else f"{base}-{uuid.uuid4().hex[:6]}"
+            try:
+                with self.connect() as conn:
+                    conn.run(
+                        "INSERT INTO organizations (id, slug, name, created_by, created_at) VALUES (?, ?, ?, ?, ?)",
+                        (org_id, slug, name, creator_email, now),
+                    )
+                    conn.run(
+                        "INSERT INTO org_members (org_id, email, role, created_at) VALUES (?, ?, 'admin', ?)",
+                        (org_id, creator_email, now),
+                    )
+            except self._integrity_errors:
+                continue
+            logger.info("Created organization %s (%s)", org_id, slug)
+            org = self.get_org(org_id)
+            assert org is not None
+            return org
+        raise RuntimeError("Could not allocate an organization slug")
+
+    def get_org(self, org_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            return conn.one(f"SELECT {ORG_COLUMNS} FROM organizations WHERE id = ?", (org_id,))
+
+    def get_org_by_slug(self, slug: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            return conn.one(f"SELECT {ORG_COLUMNS} FROM organizations WHERE slug = ?", (slug,))
+
+    def list_orgs_for(self, email: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            return conn.all(
+                "SELECT o.id, o.slug, o.name, o.created_by, o.created_at, m.role FROM organizations o "
+                "JOIN org_members m ON m.org_id = o.id WHERE m.email = ? ORDER BY LOWER(o.name)",
+                (email,),
+            )
+
+    def member_role(self, org_id: str, email: str) -> str | None:
+        with self.connect() as conn:
+            row = conn.one("SELECT role FROM org_members WHERE org_id = ? AND email = ?", (org_id, email))
+        return row["role"] if row else None
+
+    def list_members(self, org_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            return conn.all(
+                "SELECT email, role, created_at FROM org_members WHERE org_id = ? ORDER BY role, email", (org_id,)
+            )
+
+    def upsert_member(self, org_id: str, email: str, role: str) -> dict[str, Any]:
+        with self.connect() as conn:
+            conn.run(
+                "INSERT INTO org_members (org_id, email, role, created_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT (org_id, email) DO UPDATE SET role = excluded.role",
+                (org_id, email, role, utcnow()),
+            )
+            row = conn.one("SELECT email, role, created_at FROM org_members WHERE org_id = ? AND email = ?", (org_id, email))
+        assert row is not None
+        return row
+
+    def remove_member(self, org_id: str, email: str) -> bool:
+        with self.connect() as conn:
+            return conn.run("DELETE FROM org_members WHERE org_id = ? AND email = ?", (org_id, email)) > 0
+
+    def admin_count(self, org_id: str) -> int:
+        with self.connect() as conn:
+            row = conn.one("SELECT COUNT(*) AS n FROM org_members WHERE org_id = ? AND role = 'admin'", (org_id,))
+        return int(row["n"]) if row else 0
+
+    # API keys ---------------------------------------------------------------
+
+    def create_api_key(self, org_id: str, name: str, prefix: str, key_hash: str, created_by: str) -> dict[str, Any]:
+        key_id = uuid.uuid4().hex
+        with self.connect() as conn:
+            conn.run(
+                "INSERT INTO api_keys (id, org_id, name, prefix, key_hash, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (key_id, org_id, name, prefix, key_hash, created_by, utcnow()),
+            )
+            row = conn.one(f"SELECT {API_KEY_COLUMNS} FROM api_keys WHERE id = ?", (key_id,))
+        assert row is not None
+        return row
+
+    def list_api_keys(self, org_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            return conn.all(
+                f"SELECT {API_KEY_COLUMNS} FROM api_keys WHERE org_id = ? AND revoked_at IS NULL ORDER BY created_at DESC",
+                (org_id,),
+            )
+
+    def revoke_api_key(self, org_id: str, key_id: str) -> bool:
+        with self.connect() as conn:
+            return (
+                conn.run(
+                    "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND org_id = ? AND revoked_at IS NULL",
+                    (utcnow(), key_id, org_id),
+                )
+                > 0
+            )
+
+    def org_for_api_key_hash(self, key_hash: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.one(
+                "SELECT k.id AS key_id, k.created_by AS key_created_by, o.id, o.slug, o.name, o.created_by, o.created_at "
+                "FROM api_keys k JOIN organizations o ON o.id = k.org_id WHERE k.key_hash = ? AND k.revoked_at IS NULL",
+                (key_hash,),
+            )
+            if row:
+                conn.run("UPDATE api_keys SET last_used_at = ? WHERE id = ?", (utcnow(), row["key_id"]))
+        return row
+
+    # Integrations -----------------------------------------------------------
+
+    @staticmethod
+    def _integration_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        row["settings"] = json.loads(row["settings"] or "{}")
+        row["enabled"] = bool(row["enabled"])
+        return row
+
+    def get_integration(self, org_id: str, provider: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.one(
+                f"SELECT {INTEGRATION_COLUMNS} FROM integrations WHERE org_id = ? AND provider = ?", (org_id, provider)
+            )
+        return self._integration_row(row)
+
+    def list_integrations(self, org_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.all(f"SELECT {INTEGRATION_COLUMNS} FROM integrations WHERE org_id = ?", (org_id,))
+        return [self._integration_row(r) for r in rows]
+
+    def list_enabled_integrations(self, provider: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.all(
+                f"SELECT {INTEGRATION_COLUMNS} FROM integrations WHERE provider = ? AND enabled = 1", (provider,)
+            )
+        return [self._integration_row(r) for r in rows]
+
+    def upsert_integration(
+        self,
+        org_id: str,
+        provider: str,
+        credentials: str,
+        webhook_secret: str | None,
+        settings: dict[str, Any],
+        enabled: bool = True,
+    ) -> dict[str, Any]:
+        now = utcnow()
+        with self.connect() as conn:
+            conn.run(
+                "INSERT INTO integrations (org_id, provider, credentials, webhook_secret, settings, enabled, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (org_id, provider) DO UPDATE SET "
+                "credentials = excluded.credentials, webhook_secret = excluded.webhook_secret, "
+                "settings = excluded.settings, enabled = excluded.enabled, updated_at = excluded.updated_at, last_error = NULL",
+                (org_id, provider, credentials, webhook_secret, json.dumps(settings), 1 if enabled else 0, now, now),
+            )
+        result = self.get_integration(org_id, provider)
+        assert result is not None
+        return result
+
+    def delete_integration(self, org_id: str, provider: str) -> bool:
+        with self.connect() as conn:
+            return conn.run("DELETE FROM integrations WHERE org_id = ? AND provider = ?", (org_id, provider)) > 0
+
+    def mark_integration(self, org_id: str, provider: str, **fields: str | None) -> None:
+        allowed = {"last_event_at", "last_synced_at", "last_error"}
+        if not fields or set(fields) - allowed:
+            raise ValueError("Unsupported integration status fields")
+        assignments = ", ".join(f"{name} = ?" for name in fields)
+        with self.connect() as conn:
+            conn.run(
+                f"UPDATE integrations SET {assignments} WHERE org_id = ? AND provider = ?",
+                (*fields.values(), org_id, provider),
+            )
+
+    # External links ---------------------------------------------------------
+
+    @staticmethod
+    def _link_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if row is not None:
+            row["data"] = json.loads(row["data"] or "{}")
+        return row
+
+    def add_link(
+        self,
+        org_id: str,
+        session_id: str,
+        provider: str,
+        external_type: str,
+        external_id: str,
+        *,
+        parent_id: str | None = None,
+        application_id: str | None = None,
+        candidate_id: str | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        link_id = uuid.uuid4().hex
+        now = utcnow()
+        with self.connect() as conn:
+            conn.run(
+                f"INSERT INTO external_links ({LINK_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    link_id, org_id, session_id, provider, external_type, external_id, parent_id,
+                    application_id, candidate_id, json.dumps(data or {}), now, now,
+                ),
+            )
+        link = self.get_link_by_id(link_id)
+        assert link is not None
+        return link
+
+    def get_link_by_id(self, link_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            return self._link_row(conn.one(f"SELECT {LINK_COLUMNS} FROM external_links WHERE id = ?", (link_id,)))
+
+    def get_link(self, org_id: str, provider: str, external_type: str, external_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.one(
+                f"SELECT {LINK_COLUMNS} FROM external_links WHERE org_id = ? AND provider = ? AND external_type = ? "
+                "AND external_id = ?",
+                (org_id, provider, external_type, external_id),
+            )
+        return self._link_row(row)
+
+    def links_for_session(self, session_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.all(f"SELECT {LINK_COLUMNS} FROM external_links WHERE session_id = ?", (session_id,))
+        return [self._link_row(r) for r in rows]
+
+    def links_for_parent(self, org_id: str, provider: str, parent_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.all(
+                f"SELECT {LINK_COLUMNS} FROM external_links WHERE org_id = ? AND provider = ? AND parent_id = ?",
+                (org_id, provider, parent_id),
+            )
+        return [self._link_row(r) for r in rows]
+
+    def links_for_candidate(self, org_id: str, provider: str, candidate_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.all(
+                f"SELECT {LINK_COLUMNS} FROM external_links WHERE org_id = ? AND provider = ? AND candidate_id = ?",
+                (org_id, provider, candidate_id),
+            )
+        return [self._link_row(r) for r in rows]
+
+    def update_link_data(self, link_id: str, data: dict[str, Any]) -> None:
+        with self.connect() as conn:
+            conn.run(
+                "UPDATE external_links SET data = ?, updated_at = ? WHERE id = ?", (json.dumps(data), utcnow(), link_id)
+            )
+
+    # Assessment templates -----------------------------------------------------
+
+    @staticmethod
+    def _template_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if row is not None:
+            row["files"] = json.loads(row["files"] or "{}")
+        return row
+
+    def list_templates(self, org_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.all(
+                f"SELECT {TEMPLATE_COLUMNS} FROM assessment_templates WHERE org_id = ? ORDER BY LOWER(name)", (org_id,)
+            )
+        return [self._template_row(r) for r in rows]
+
+    def get_template(self, org_id: str, template_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.one(
+                f"SELECT {TEMPLATE_COLUMNS} FROM assessment_templates WHERE org_id = ? AND id = ?", (org_id, template_id)
+            )
+        return self._template_row(row)
+
+    def save_template(
+        self,
+        org_id: str,
+        name: str,
+        description: str,
+        language: str,
+        files: dict[str, str],
+        time_limit_minutes: int | None,
+        actor: str,
+        template_id: str | None = None,
+    ) -> dict[str, Any]:
+        now = utcnow()
+        with self.connect() as conn:
+            if template_id:
+                conn.run(
+                    "UPDATE assessment_templates SET name = ?, description = ?, language = ?, files = ?, "
+                    "time_limit_minutes = ?, updated_at = ? WHERE id = ? AND org_id = ?",
+                    (name, description, language, json.dumps(files), time_limit_minutes, now, template_id, org_id),
+                )
+            else:
+                template_id = uuid.uuid4().hex
+                conn.run(
+                    f"INSERT INTO assessment_templates ({TEMPLATE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (template_id, org_id, name, description, language, json.dumps(files), time_limit_minutes, actor, now, now),
+                )
+        template = self.get_template(org_id, template_id)
+        assert template is not None
+        return template
+
+    def delete_template(self, org_id: str, template_id: str) -> bool:
+        with self.connect() as conn:
+            return conn.run("DELETE FROM assessment_templates WHERE id = ? AND org_id = ?", (template_id, org_id)) > 0
