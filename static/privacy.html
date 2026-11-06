@@ -30,7 +30,10 @@
         <ul>
           <li><strong>Interviewers (Google sign-in):</strong> your name, email address, and profile picture from Google. We request only the <code>openid</code>, <code>email</code>, and <code>profile</code> scopes. We never see your Google password, and we don't access your Gmail, Drive, contacts, or calendar.</li>
           <li><strong>Candidates:</strong> no account is needed. We store the candidate name the interviewer typed when creating the session.</li>
-          <li><strong>Session content:</strong> files, code, and run output (stdout, stderr, exit codes) created during a session, plus a change history used to sync the editor between participants.</li>
+          <li><strong>Session content:</strong> files, code, and run output (stdout, stderr, exit codes) created during a session, plus a change history used to sync the editor between participants. Interviewers can also record a session for later playback.</li>
+          <li><strong>Organizations:</strong> organization names and member email addresses with their roles, plus API keys (we store only a hash).</li>
+          <li><strong>Applicant tracking and scheduling data:</strong> if an organization connects Ashby or ModernLoop, we receive the candidate's name, email address, and ATS identifiers; the job and interview stage; interview times; and interviewer names and email addresses. We use this only to create sessions and send results back to that organization's account.</li>
+          <li><strong>Integration credentials:</strong> Ashby API keys, ModernLoop API tokens, and webhook secrets that organization admins provide. They're encrypted at rest.</li>
           <li><strong>Technical data:</strong> request logs (method, path, status, and timing). Our hosting provider may also keep standard access logs, including IP addresses.</li>
         </ul>
 
@@ -38,6 +41,7 @@
         <ul>
           <li>To sign interviewers in and show their name and avatar.</li>
           <li>To run interview sessions, sync edits, execute code, and let interviewers review past sessions.</li>
+          <li>To send candidates their interview or assessment link, and to post results (a summary, the final code, and playback links) back to the organization's ATS when it has connected one.</li>
           <li>To keep the service secure and diagnose problems.</li>
         </ul>
         <p>We don't sell your data, show ads, or use session content to train models.</p>
@@ -48,11 +52,20 @@
         <h2>Where data is stored</h2>
         <p>The app runs on Vercel in the United States (us-east). Data is stored in a Supabase Postgres database. Code runs in temporary server workspaces that are discarded when the server instance is recycled.</p>
 
+        <h2>Service providers</h2>
+        <ul>
+          <li><strong>Vercel</strong>: hosting and logs.</li>
+          <li><strong>Supabase</strong>: database.</li>
+          <li><strong>Google</strong>: interviewer sign-in.</li>
+          <li><strong>Resend</strong>: candidate assessment emails, when enabled.</li>
+          <li><strong>Ashby</strong> and <strong>ModernLoop</strong>: only when an organization connects its own account. Data flows to and from that organization's account.</li>
+        </ul>
+
         <h2>Who can see a session</h2>
-        <p>Only the interviewer who created a session, and anyone holding its PIN while the session is active, can open it. Ending a session disables its PIN. The interviewer can still review it afterward.</p>
+        <p>The interviewer who created a session can open it, and so can members of the organization that owns it. A candidate can open it with its PIN or invite link while it's active. Ending a session, or submitting a take-home, disables candidate access. Interviewers can still review it afterward. Organization admins decide who their members are.</p>
 
         <h2>Retention and deletion</h2>
-        <p>Sessions are kept until the interviewer asks us to delete them. To delete your account data or a specific session, or to request a copy of your data, <a href="{{CONTACT_URL}}" target="_blank" rel="noopener">contact us</a>. We delete the requested data within 30 days. You can also revoke this app's access to your Google account at any time at <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>.</p>
+        <p>Sessions are kept until the interviewer or organization admin asks us to delete them. Disconnecting an integration deletes its stored credentials immediately. Candidates whose data came from an ATS can ask the hiring organization or us to delete it. To delete your account data or a specific session, or to request a copy of your data, <a href="{{CONTACT_URL}}" target="_blank" rel="noopener">contact us</a>. We delete the requested data within 30 days. You can also revoke this app's access to your Google account at any time at <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>.</p>
 
         <h2>Children</h2>
         <p>{{APP_NAME}} is meant for professional hiring and isn't directed at children under 13.</p>

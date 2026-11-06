@@ -23,6 +23,11 @@ Both        → edit main.py · ▶ Run · see each other's changes in ~1s
 | Live refresh | Toggle it on and code re-runs a moment after you stop typing. |
 | Candidate portal | Sessions grouped by candidate. Reopen any of them after the interview to review files and runs. |
 | Record and replay | Interviewers press ● Record; both sides see a REC badge. Replay edits, file changes, and runs later at 1x, 2x, or 4x with a seek bar. |
+| Organizations | Teams share sessions, manage members, and issue API keys from **Organization settings**. |
+| Ashby | Scheduled interviews become sessions automatically. The join link goes into invites, and results, code, and playback come back to the candidate profile. |
+| ModernLoop | Polls ModernLoop every 10 minutes and creates sessions for newly scheduled interviews. |
+| Take-homes | Timed, solo assessments with a Submit button, started from Ashby's interview plan. |
+| Public API | `POST /v1/pads` returns a candidate join link, so any scheduler or ATS can create interviews. |
 | Google sign-in | OpenID Connect with PKCE. Name and avatar sit top right with a Log out dropdown. |
 | Light and dark | Bento Box design, custom favicon, works on phones. |
 
@@ -32,7 +37,26 @@ Both        → edit main.py · ▶ Run · see each other's changes in ~1s
 
 **Interviewers** click **Interviewer sign in with Google** on [watchmecode.live](https://watchmecode.live). Any Google account works. You land on the candidate portal: type the candidate's name, pick a starter language, and press **Generate PIN**.
 
-**Candidates** need no account. Open [watchmecode.live](https://watchmecode.live), type the PIN from your interviewer into **Join an interview**, and press **Join**. The PIN stops working once the interviewer ends the session.
+**Candidates** need no account. Open [watchmecode.live](https://watchmecode.live), type the PIN from your interviewer into **Join an interview**, and press **Join**, or just open the invite link (`/j/…`) from the interview email. The PIN stops working once the interviewer ends the session.
+
+## Integrations
+
+```bash
+curl -s https://watchmecode.live/v1/pads \
+  -H "Authorization: Bearer $WATCHMECODE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"candidate_name":"Ada Lovelace","title":"Backend onsite","language":"python"}'
+# → {"id": "…", "join_url": "https://watchmecode.live/j/…", "interviewer_url": "…", "pin": "482913", …}
+```
+
+| Integration | What it does | Guide |
+| --- | --- | --- |
+| Ashby (live interviews) | Signed webhooks create one session per interview event, write the join link to a candidate custom field and a note, and post results, the final code, and playback when the session ends | [docs/integrations/ashby.md](docs/integrations/ashby.md) |
+| Ashby (take-homes) | Assessments Partner API at `/partners/ashby` starts timed take-homes and reports status and results | [docs/integrations/ashby.md](docs/integrations/ashby.md#take-home-assessments-assessments-partner-api) |
+| ModernLoop | A Vercel cron polls the Platform API and creates sessions for scheduled interviews. Native coding-link support is pitched in the guide. | [docs/integrations/modernloop.md](docs/integrations/modernloop.md) |
+| Public API | Create, read, and end pads, and fetch results and a code zip, with an org API key | [docs/api.md](docs/api.md) |
+
+Set it up under **Organization settings** (account menu → Organization settings). Research notes behind the design are in [docs/integrations/research.md](docs/integrations/research.md).
 
 ## Quick start
 
@@ -61,6 +85,11 @@ All settings come from `.env` locally and from Vercel environment variables in p
 | `POSTGRES_URL` / `DATABASE_URL` | Postgres connection. Empty means SQLite |
 | `DB_SCHEMA` | Postgres schema for the tables (default `watchmecode`) |
 | `RUN_TIMEOUT_SECONDS`, `INSTALL_TIMEOUT_SECONDS` | Runner limits (defaults 20 and 120) |
+| `INTEGRATION_ENCRYPTION_KEY` | Fernet key that encrypts stored Ashby and ModernLoop credentials |
+| `CRON_SECRET` | Bearer token Vercel cron sends to `/api/cron/modernloop` |
+| `ASHBY_PARTNER_ID` | `partnerId` for `assessment.addCompletedToCandidate` (default `watchmecode`) |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Optional: email take-home invites to candidates |
+| `JOIN_LINK_MAX_AGE` | Seconds candidate invite links stay valid (default 30 days) |
 | `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | Only for non-interactive CLI deploys |
 
 Google's authorized redirect URIs must include both:
@@ -108,9 +137,14 @@ flowchart LR
   db[("Supabase Postgres, schema watchmecode")]
   runner[Subprocess runner]
   google[Google OpenID Connect]
+  ashby[Ashby]
+  modernloop[ModernLoop]
   interviewer -->|session cookie| api
-  candidate -->|PIN then bearer token| api
+  candidate -->|PIN or invite link| api
   interviewer -.->|sign in| google
+  ashby -->|signed webhooks, partner API| api
+  api -->|notes, files, assessment updates| ashby
+  api -->|"cron poll (10 min)"| modernloop
   api --> db
   api --> runner
 ```
@@ -122,7 +156,8 @@ Both browsers poll `GET /api/sessions/{id}/changes?since=` every second. Vercel 
 | Path | Contents |
 | --- | --- |
 | `api/index.py` | Vercel entrypoint exporting `app` |
-| `app/` | Config, logging, auth, repository, schemas, routes, runner, language templates |
+| `app/` | Config, logging, auth, repository, schemas, routes, runner, language templates, orgs, public API, results |
+| `app/integrations/` | Ashby (webhooks, partner API, write-back), ModernLoop poller, email, HTTP clients |
 | `static/` | Single-page UI, CSS, favicon, vendored CodeMirror bundle |
 | `frontend/` | Builds `static/vendor/codemirror.js` (`cd frontend && npm install && npm run build`) |
 | `sql/` | SQLite and Postgres schemas |

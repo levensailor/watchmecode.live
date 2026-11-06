@@ -2,6 +2,15 @@
 
 Feature changes, newest first. Times are America/New_York.
 
+## 2026-11-06
+
+- **10:00** Document the Ashby and ModernLoop integrations, the public API, and organization settings, and update the privacy policy and terms for ATS data and integration credentials.
+- **09:55** Poll ModernLoop for scheduled interviews via Vercel cron, accept anonymous candidates on the pads API, and add the ModernLoop partnership pitch.
+- **09:50** Add the Ashby Assessments Partner API for timed take-homes: list templates, start (with candidate email), cancel, and report Started and Submitted results back to Ashby.
+- **09:45** Create sessions from Ashby interview schedules through signed webhooks, write the join link to a candidate custom field and a note, and push results, the final code, and playback back to Ashby.
+- **09:40** Add organization settings, an org picker for new sessions, candidate invite links, and a timed take-home mode with Submit so teams can manage integrations and assessments in the browser.
+- **09:30** Add organizations, API keys, encrypted integration credentials, signed join links, and a public pads API as the foundation for Ashby and ModernLoop integrations.
+
 ## 2026-11-03
 
 - **17:35** Add interview recording for interviewers and a playback view with 1x/2x/4x speed and seeking, so interviews can be reviewed after they end.

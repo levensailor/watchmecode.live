@@ -10,6 +10,16 @@
 
 The portal groups sessions by candidate name. **Open** loads any session's files and run history, before or after the interview.
 
+### Organizations and integrations
+
+Open **Organization settings** from the account menu to create an organization, add teammates (they can open every session in the org), and issue API keys. Connect [Ashby](integrations/ashby.md) or [ModernLoop](integrations/modernloop.md) there to create sessions automatically for scheduled interviews, and add take-home assessments that Ashby can send.
+
+When you have an organization, **New session** asks which one owns the session; "Personal" keeps it to yourself.
+
+### Take-home assessments
+
+Candidates open their invite link and get a solo IDE with a countdown and a **Submit** button. Their work is submitted when they press Submit or when time runs out, and the results go back to Ashby.
+
 ### Recording and playback
 
 1. In the IDE, press **● Record**. A red **REC** badge with a timer appears for you and the candidate, and the candidate gets a notice.

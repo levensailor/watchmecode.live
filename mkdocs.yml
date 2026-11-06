@@ -31,6 +31,11 @@ nav:
   - Using it: usage.md
   - Architecture: architecture.md
   - API: api.md
+  - Integrations:
+      - Ashby: integrations/ashby.md
+      - ModernLoop: integrations/modernloop.md
+      - Ashby partner application: integrations/ashby-partner-application.md
+      - Research notes: integrations/research.md
   - Deployment: deployment.md
   - Contributing: contributing.md
   - Changelog: changelog.md
