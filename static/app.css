@@ -115,7 +115,7 @@ button, input, select { font: inherit; color: inherit; }
   border: 1px solid var(--border); background: var(--tile); box-shadow: var(--shadow); font-size: 16px;
 }
 
-.field { display: grid; gap: 6px; }
+.field { display: grid; gap: 6px; min-width: 0; }
 .field label, .caption { font-size: 12.5px; font-weight: 500; color: var(--muted); }
 .input, select.input {
   width: 100%; padding: 11px 14px; border-radius: var(--radius-inner); border: 1px solid var(--hairline);
@@ -317,8 +317,8 @@ button, input, select { font: inherit; color: inherit; }
 .inline-form > .field { flex: 1 1 160px; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
 .toggles { display: grid; gap: 8px; }
-.copy-field { display: flex; gap: 8px; align-items: center; }
-.copy-field code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12.5px var(--mono); padding: 9px 12px; border-radius: var(--radius-inner); background: var(--inset); }
+.copy-field { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.copy-field code { flex: 1; width: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12.5px var(--mono); padding: 9px 12px; border-radius: var(--radius-inner); background: var(--inset); }
 .status-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); font-weight: 500; }
 .status-line .chip.ok { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
 .status-line .chip.err { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
