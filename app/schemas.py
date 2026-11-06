@@ -319,7 +319,9 @@ class JoinLinkIn(BaseModel):
 
 
 class PadCreate(BaseModel):
-    candidate_name: str = Field(min_length=1, max_length=80)
+    candidate_name: str = Field(
+        default="Candidate", min_length=1, max_length=80, description="Real name, an ATS label like 'Application 12345', or omitted"
+    )
     candidate_email: str | None = Field(default=None, pattern=EMAIL_PATTERN, max_length=254)
     title: str | None = Field(default=None, max_length=200)
     language: LanguageId = LanguageId.python
