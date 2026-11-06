@@ -136,7 +136,7 @@ def test_signup_checks_subdomains_and_creates_a_trial_workspace(multi_app, multi
 
     assert client.post("/api/platform/workspaces", json={"name": "Dup", "slug": "ae"}).status_code == 409
     assert client.get("/api/platform/subdomains/ae").json()["reason"] == "That subdomain is taken."
-    assert [w["slug"] for w in client.get("/api/platform/me").json()["workspaces"]] == ["ae"]
+    assert [w["slug"] for w in client.get("/api/platform/me").json()["workspaces"]] == ["ae", "app"]
 
 
 def test_platform_endpoints_are_apex_only(multi_app, multi_settings):

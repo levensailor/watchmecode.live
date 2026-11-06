@@ -127,6 +127,9 @@ def platform_me(request: Request) -> dict[str, Any]:
         for tenant in registry.platform.tenants_for_email(user["email"]):
             if tenant["status"] != "deleted":
                 workspaces.append(_brief(settings, tenant, tenant.get("role")))
+        default = registry.default_tenant()
+        if default and default["open_access"] and all(w["slug"] != default["slug"] for w in workspaces):
+            workspaces.append(_brief(settings, default, "interviewer"))
     return {"user": user, "workspaces": workspaces, "google_enabled": settings.google_configured}
 
 
