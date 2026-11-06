@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 
+from app import plans
 from app.auth import require_user
 from app.crypto import new_api_key, new_webhook_secret
 from app.integrations import ashby, modernloop
@@ -31,11 +32,13 @@ from app.schemas import (
     TemplateOut,
     WebhookSecretOut,
 )
+from app.tenancy import current_tenant
 from app.urls import ashby_partner_base_url, ashby_webhook_url, base_url
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/orgs", tags=["organizations"])
+INTEGRATIONS = [Depends(plans.require_feature("integrations"))]
 PROVIDERS = ("ashby", "modernloop")
 
 
@@ -140,7 +143,8 @@ def remove_member(email: str, ctx: OrgContext = Depends(org_admin), repo: Reposi
 
 @router.post("/{org_id}/api-keys", response_model=ApiKeyCreated, status_code=status.HTTP_201_CREATED)
 def create_api_key(body: ApiKeyCreate, ctx: OrgContext = Depends(org_admin), repo: Repository = Depends(get_repo)) -> dict:
-    plaintext, prefix, key_hash = new_api_key()
+    tenant = current_tenant.get()
+    plaintext, prefix, key_hash = new_api_key(tenant["slug"] if tenant else None)
     row = repo.create_api_key(ctx.org["id"], body.name.strip(), prefix, key_hash, ctx.user["email"])
     logger.info("API key %s created for org %s", row["id"], ctx.org["id"])
     return {**row, "key": plaintext}
@@ -160,7 +164,7 @@ def revoke_api_key(key_id: str, ctx: OrgContext = Depends(org_admin), repo: Repo
 # Integrations ------------------------------------------------------------------------------
 
 
-@router.put("/{org_id}/integrations/ashby", response_model=IntegrationOut)
+@router.put("/{org_id}/integrations/ashby", response_model=IntegrationOut, dependencies=INTEGRATIONS)
 def connect_ashby(
     body: AshbyConnect, request: Request, ctx: OrgContext = Depends(org_admin), repo: Repository = Depends(get_repo)
 ) -> IntegrationOut:
@@ -180,7 +184,7 @@ def connect_ashby(
     return integration_out(request, ctx.org, "ashby", row)
 
 
-@router.get("/{org_id}/integrations/ashby/webhook-secret", response_model=WebhookSecretOut)
+@router.get("/{org_id}/integrations/ashby/webhook-secret", response_model=WebhookSecretOut, dependencies=INTEGRATIONS)
 def ashby_webhook_secret(request: Request, ctx: OrgContext = Depends(org_admin), repo: Repository = Depends(get_repo)) -> WebhookSecretOut:
     row = repo.get_integration(ctx.org["id"], "ashby")
     if not row or not row["webhook_secret"]:
@@ -192,7 +196,7 @@ def ashby_webhook_secret(request: Request, ctx: OrgContext = Depends(org_admin),
     )
 
 
-@router.post("/{org_id}/integrations/ashby/test")
+@router.post("/{org_id}/integrations/ashby/test", dependencies=INTEGRATIONS)
 async def test_ashby(request: Request, ctx: OrgContext = Depends(org_admin), repo: Repository = Depends(get_repo)) -> dict:
     row = repo.get_integration(ctx.org["id"], "ashby")
     if not row:
@@ -210,7 +214,7 @@ async def test_ashby(request: Request, ctx: OrgContext = Depends(org_admin), rep
         return {"ok": False, "detail": str(exc)}
 
 
-@router.put("/{org_id}/integrations/modernloop", response_model=IntegrationOut)
+@router.put("/{org_id}/integrations/modernloop", response_model=IntegrationOut, dependencies=INTEGRATIONS)
 def connect_modernloop(
     body: ModernLoopConnect, request: Request, ctx: OrgContext = Depends(org_admin), repo: Repository = Depends(get_repo)
 ) -> IntegrationOut:
@@ -226,7 +230,7 @@ def connect_modernloop(
     return integration_out(request, ctx.org, "modernloop", row)
 
 
-@router.post("/{org_id}/integrations/modernloop/test")
+@router.post("/{org_id}/integrations/modernloop/test", dependencies=INTEGRATIONS)
 async def test_modernloop(request: Request, ctx: OrgContext = Depends(org_admin), repo: Repository = Depends(get_repo)) -> dict:
     row = repo.get_integration(ctx.org["id"], "modernloop")
     if not row:
@@ -245,7 +249,7 @@ async def test_modernloop(request: Request, ctx: OrgContext = Depends(org_admin)
         return {"ok": False, "detail": str(exc)}
 
 
-@router.post("/{org_id}/integrations/modernloop/sync", response_model=SyncResult)
+@router.post("/{org_id}/integrations/modernloop/sync", response_model=SyncResult, dependencies=INTEGRATIONS)
 async def sync_modernloop(request: Request, ctx: OrgContext = Depends(org_admin), repo: Repository = Depends(get_repo)) -> dict:
     row = repo.get_integration(ctx.org["id"], "modernloop")
     if not row:

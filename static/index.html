@@ -84,6 +84,7 @@
       <div class="session-chip" id="session-chip" hidden></div>
 
       <div class="topbar-right">
+        <a class="workspace-chip" id="workspace-chip" href="#/workspace" hidden></a>
         <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">◐</button>
         <a class="btn btn-primary btn-sm" id="signin-btn" href="/auth/google" hidden>Interviewer sign in</a>
         <div class="menu" id="user-menu" hidden>
@@ -96,6 +97,8 @@
             <div class="dropdown-meta" id="user-email"></div>
             <a role="menuitem" href="#/">Candidate portal</a>
             <a role="menuitem" href="#/org">Organization settings</a>
+            <a role="menuitem" href="#/workspace" id="menu-workspace" hidden>Workspace &amp; billing</a>
+            <a role="menuitem" href="/" id="menu-switch" hidden>Switch workspace</a>
             <hr />
             <a role="menuitem" href="/auth/logout" id="logout-link">Log out</a>
           </div>
@@ -180,6 +183,9 @@
 
     <!-- Organization settings -->
     <main class="bento org-view" id="view-org" hidden></main>
+
+    <!-- Workspace & billing (multi-tenant) -->
+    <main class="bento org-view" id="view-workspace" hidden></main>
 
     <!-- IDE -->
     <main class="ide" id="view-ide" hidden>

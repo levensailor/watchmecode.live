@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import auth, orgs, public_api, routes
+from app import auth, orgs, platform_api, public_api, routes
 from app.config import PROJECT_ROOT, Settings, get_settings
 from app.crypto import Vault
 from app.integrations import ashby, modernloop
@@ -94,6 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ashby.router)
     app.include_router(ashby.partner_router)
     app.include_router(modernloop.router)
+    app.include_router(platform_api.router)
 
     @app.get("/api/health", tags=["meta"])
     def health() -> dict[str, str]:

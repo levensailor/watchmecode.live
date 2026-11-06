@@ -17,7 +17,9 @@ from app.auth import (
     require_user,
     workspace_user,
 )
+from app import plans
 from app.integrations import hooks
+from app.tenancy import apex_url, current_site, current_tenant
 from app.languages import LANGUAGES
 from app.repository import PathConflictError, PinExhaustedError, RecordingConflictError, Repository, utcnow
 from app.results import build_zip, zip_filename
@@ -122,7 +124,26 @@ def app_info(request: Request, repo: Repository = Depends(get_repo)) -> AppInfoO
         author=settings.app_author,
         google_enabled=settings.google_configured,
         storage=repo.kind,
+        workspace=workspace_brief(request),
     )
+
+
+def workspace_brief(request: Request) -> dict | None:
+    settings = request.app.state.settings
+    tenant = current_tenant.get()
+    if not settings.multi_tenant or tenant is None or current_site.get() != "tenant":
+        return None
+    plan = plans.plan_for(tenant)
+    return {
+        "slug": tenant["slug"],
+        "name": tenant["name"],
+        "plan": plan.id,
+        "plan_name": plan.name,
+        "state": plans.state_of(tenant),
+        "trial_days_left": plans.trial_days_left(tenant),
+        "switch_url": f"{apex_url(settings)}/login",
+        "features": sorted(plan.features),
+    }
 
 
 @router.get("/api/languages", response_model=list[LanguageOut], tags=["meta"])
@@ -136,9 +157,18 @@ def list_languages() -> list[LanguageOut]:
 # Interviewer -------------------------------------------------------------------
 
 
-@router.post("/api/sessions", response_model=SessionOut, status_code=status.HTTP_201_CREATED, tags=["interviewer"])
-def create_session(body: SessionCreate, user: dict = Depends(require_user), repo: Repository = Depends(get_repo)) -> dict:
+@router.post(
+    "/api/sessions",
+    response_model=SessionOut,
+    status_code=status.HTTP_201_CREATED,
+    tags=["interviewer"],
+    dependencies=[Depends(plans.require_active)],
+)
+def create_session(
+    body: SessionCreate, request: Request, user: dict = Depends(require_user), repo: Repository = Depends(get_repo)
+) -> dict:
     language = LANGUAGES[body.language]
+    plans.check_language(request.app.state.settings, language.id.value)
     if body.org_id and repo.member_role(body.org_id, user["email"]) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Organization not found")
     try:
@@ -237,12 +267,22 @@ def get_playback(
 # Shared ------------------------------------------------------------------------
 
 
+def admit_candidate(request: Request, session: dict) -> None:
+    """Enforce the workspace's credit allowance and meter the first candidate join of a session."""
+    settings = request.app.state.settings
+    registry = request.app.state.tenants
+    tenant = current_tenant.get()
+    plans.check_join_allowed(settings, registry, tenant, session)
+    plans.meter_join(request.app, tenant, session)
+
+
 @router.post("/api/join", response_model=JoinOut, tags=["shared"])
 def join(body: JoinIn, request: Request, repo: Repository = Depends(get_repo)) -> JoinOut:
     session = repo.get_active_session_by_pin(body.pin)
     if not session:
         logger.info("Join rejected for an unknown PIN")
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No active session for that PIN")
+    admit_candidate(request, session)
     logger.info("Candidate joined session %s", session["id"])
     return JoinOut(
         session=SessionPublic(**session),
@@ -259,6 +299,7 @@ def join_with_link(body: JoinLinkIn, request: Request, repo: Repository = Depend
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This invite link is invalid or expired")
     if session["status"] != "active":
         raise HTTPException(status.HTTP_410_GONE, "This interview has ended")
+    admit_candidate(request, session)
     logger.info("Candidate joined session %s via invite link", session["id"])
     return JoinOut(
         session=SessionPublic(**session),

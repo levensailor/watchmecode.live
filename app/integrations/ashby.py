@@ -9,11 +9,12 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
+from app import plans
 from app.auth import issue_join_token
 from app.crypto import hash_api_key, verify_signature
 from app.integrations.ashby_client import AshbyClient
@@ -22,6 +23,7 @@ from app.integrations.http import IntegrationError
 from app.languages import LANGUAGES, LanguageId
 from app.repository import PinExhaustedError, Repository, utcnow
 from app.results import build_summary, build_zip, render_link_note, render_note, zip_filename
+from app.tenancy import current_tenant
 from app.urls import base_url, interviewer_url, join_url
 
 logger = logging.getLogger(__name__)
@@ -31,8 +33,9 @@ SCHEDULE_ACTIONS = {"interviewScheduleCreate", "interviewScheduleUpdate"}
 LIVE_ASSESSMENT_TYPE = "watchmecode-live-interview"
 DEFAULT_TAKE_HOME_MINUTES = 60
 
-router = APIRouter(tags=["integrations"])
-partner_router = APIRouter(prefix="/partners/ashby", tags=["ashby partner"])
+INTEGRATIONS = [Depends(plans.require_feature("integrations"))]
+router = APIRouter(tags=["integrations"], dependencies=INTEGRATIONS)
+partner_router = APIRouter(prefix="/partners/ashby", tags=["ashby partner"], dependencies=INTEGRATIONS)
 
 
 # Helpers ---------------------------------------------------------------------------
@@ -496,6 +499,11 @@ async def assessment_start(request: Request):
         body = AssessmentStartIn.model_validate(await _json(request))
     except ValidationError as exc:
         return partner_error("invalid_request", exc.errors()[0].get("msg", "Invalid request"))
+    settings = request.app.state.settings
+    try:
+        plans.check_take_home_quota(settings, request.app.state.tenants, current_tenant.get())
+    except HTTPException as exc:
+        return partner_error("quota_exceeded", str(exc.detail))
     return await run_in_threadpool(start_assessment, request.app, org, body, base_url(request.app.state.settings, request))
 
 

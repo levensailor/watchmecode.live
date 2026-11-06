@@ -152,6 +152,26 @@ def require_active(request: Request) -> None:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Your trial has ended. Choose a plan to continue.")
 
 
+def check_language(settings: Settings, language: str) -> None:
+    feature = LAB_LANGUAGES.get(language)
+    if feature and not has_feature(settings, current_tenant.get(), feature):
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, upgrade_message(feature))
+
+
+def check_take_home_quota(settings: Settings, registry, tenant: dict[str, Any] | None) -> None:
+    if not settings.multi_tenant or tenant is None or registry.platform is None:
+        return
+    plan = plan_for(tenant)
+    if plan.take_homes is None:
+        return
+    used = registry.platform.count_usage(tenant["id"], period_start(tenant), "take_home")
+    if used >= plan.take_homes:
+        raise HTTPException(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            f"{plan.name} includes {plan.take_homes} take-homes a month. Team includes unlimited take-homes.",
+        )
+
+
 def credits_for(language: str, sandbox: bool = False) -> int:
     return SANDBOX_CREDITS if sandbox else 1
 
@@ -176,6 +196,8 @@ def usage_summary(settings: Settings, registry, tenant: dict[str, Any] | None) -
 def check_join_allowed(settings: Settings, registry, tenant: dict[str, Any] | None, session: dict[str, Any]) -> None:
     """Trials stop at their credit allowance; paid plans keep going and bill overage."""
     if not settings.multi_tenant or tenant is None or registry.platform is None:
+        return
+    if registry.platform.session_metered(tenant["id"], session["id"]):
         return
     state = state_of(tenant)
     if state in ("expired", "canceled"):

@@ -4,6 +4,8 @@ Feature changes, newest first. Times are America/New_York.
 
 ## 2026-11-06
 
+- **10:45** Add Stripe billing (Checkout, Customer Portal, signed webhooks, metered overage), plan entitlements, interview-credit metering, a workspace signup API with a subdomain check, and a Workspace & billing view for members, sign-in domains, and plans.
+- **10:40** Sign in once at the apex with Google and hand off to each workspace subdomain with single-use Ed25519 tokens that dedicated instances can verify with only the public key.
 - **10:35** Serve each customer workspace from its own subdomain and database schema, with a platform store for tenants, memberships, and usage, workspace-bound sign-in, and a migration runner.
 - **10:20** Capture product screenshots and a playback GIF from a seeded demo workspace for the marketing site.
 - **10:00** Document the Ashby and ModernLoop integrations, the public API, and organization settings, and update the privacy policy and terms for ATS data and integration credentials.

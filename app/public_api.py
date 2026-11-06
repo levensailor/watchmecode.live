@@ -9,6 +9,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
+from app import plans
 from app.auth import issue_join_token
 from app.crypto import hash_api_key
 from app.integrations import hooks
@@ -16,11 +17,12 @@ from app.languages import LANGUAGES
 from app.repository import PinExhaustedError, Repository
 from app.results import build_summary, build_zip, zip_filename
 from app.schemas import PadCreate, PadOut, ResultSummary
+from app.tenancy import current_tenant
 from app.urls import base_url, interviewer_url, join_url
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1", tags=["public api"])
+router = APIRouter(prefix="/v1", tags=["public api"], dependencies=[Depends(plans.require_feature("api"))])
 DEFAULT_TAKE_HOME_MINUTES = 60
 
 
@@ -80,6 +82,11 @@ def _org_session(repo: Repository, org: dict[str, Any], pad_id: str) -> dict[str
 @router.post("/pads", response_model=PadOut, status_code=status.HTTP_201_CREATED, summary="Create a coding pad")
 def create_pad(body: PadCreate, request: Request, org: dict = Depends(api_org), repo: Repository = Depends(get_repo)) -> PadOut:
     language = LANGUAGES[body.language]
+    settings = request.app.state.settings
+    plans.require_active(request)
+    plans.check_language(settings, language.id.value)
+    if body.mode == "take_home":
+        plans.check_take_home_quota(settings, request.app.state.tenants, current_tenant.get())
     minutes = body.time_limit_minutes or (DEFAULT_TAKE_HOME_MINUTES if body.mode == "take_home" else None)
     owner = (body.interviewer_email or org["key_created_by"] or org["created_by"]).lower()
     try:

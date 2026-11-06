@@ -40,10 +40,21 @@ class Vault:
             raise DecryptionError("Stored credential could not be decrypted") from exc
 
 
-def new_api_key() -> tuple[str, str, str]:
-    """Return (plaintext, display prefix, sha256 hash). Only the hash is stored."""
-    plaintext = API_KEY_PREFIX + secrets.token_urlsafe(32)
-    return plaintext, plaintext[:API_KEY_DISPLAY_CHARS], hash_api_key(plaintext)
+def new_api_key(workspace: str | None = None) -> tuple[str, str, str]:
+    """Return (plaintext, display prefix, sha256 hash). Only the hash is stored.
+
+    Keys for a multi-tenant workspace look like `wmc_<slug>.<token>` so the apex can route them.
+    """
+    scope = f"{workspace}." if workspace else ""
+    plaintext = API_KEY_PREFIX + scope + secrets.token_urlsafe(32)
+    return plaintext, plaintext[: API_KEY_DISPLAY_CHARS + len(scope)], hash_api_key(plaintext)
+
+
+def key_workspace(plaintext: str) -> str | None:
+    if not plaintext.startswith(API_KEY_PREFIX):
+        return None
+    scope, dot, _token = plaintext[len(API_KEY_PREFIX) :].partition(".")
+    return scope if dot and scope else None
 
 
 def hash_api_key(plaintext: str) -> str:

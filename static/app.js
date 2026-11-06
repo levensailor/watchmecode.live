@@ -201,6 +201,7 @@ function renderUser() {
   const inIde = !$("view-ide").hidden || !$("view-player").hidden;
   $("user-menu").hidden = !signedIn;
   $("signin-btn").hidden = signedIn || inIde || !app.info?.google_enabled;
+  renderWorkspaceChip(signedIn && !inIde);
   if (!signedIn) return;
   $("user-name").textContent = app.me.name;
   $("user-email").textContent = app.me.email;
@@ -210,12 +211,34 @@ function renderUser() {
   $("user-avatar").replaceChildren(avatar);
 }
 
+function workspaceStatus(ws) {
+  if (ws.state === "expired") return "Trial ended";
+  if (ws.state === "trialing") return `Trial · ${ws.trial_days_left} day${ws.trial_days_left === 1 ? "" : "s"} left`;
+  if (ws.state === "past_due") return `${ws.plan_name} · payment due`;
+  if (ws.state === "canceled") return "Canceled";
+  return ws.plan_name;
+}
+
+function renderWorkspaceChip(show) {
+  const ws = app.info?.workspace;
+  $("menu-workspace").hidden = !ws;
+  $("menu-switch").hidden = !ws;
+  if (ws) $("menu-switch").href = ws.switch_url;
+  const chip = $("workspace-chip");
+  chip.hidden = !ws || !show;
+  if (!ws) return;
+  chip.classList.toggle("warn", ["expired", "past_due", "canceled"].includes(ws.state));
+  chip.replaceChildren(h("strong", {}, ws.name), h("span", {}, workspaceStatus(ws)));
+}
+
 async function loadIdentity() {
+  app.forbidden = null;
   try {
     app.me = await api("/api/me");
   } catch (err) {
-    if (!(err instanceof ApiError) || err.status !== 401) throw err;
+    if (!(err instanceof ApiError) || ![401, 403].includes(err.status)) throw err;
     app.me = null;
+    if (err.status === 403) app.forbidden = err.message;
   }
   renderUser();
   await loadOrgs();
@@ -239,6 +262,12 @@ function renderHome() {
     actions.append(
       h("span", { class: "caption" }, `Signed in as ${app.me.name}`),
       h("a", { class: "btn btn-light", href: "#portal", onclick: (e) => { e.preventDefault(); $("candidate-input").focus(); } }, "Start a new session"),
+    );
+  } else if (app.forbidden && app.info?.workspace) {
+    actions.append(
+      h("span", { class: "caption" }, `${app.forbidden}. Ask a workspace admin to add you.`),
+      h("a", { class: "btn btn-light", href: app.info.workspace.switch_url }, "Switch workspace"),
+      h("a", { class: "btn btn-light", href: "/auth/logout" }, "Use another account"),
     );
   } else if (app.info?.google_enabled) {
     actions.append(
@@ -1973,6 +2002,163 @@ async function joinWithLink(token) {
   }
 }
 
+/* Workspace & billing (multi-tenant) ------------------------------------------------- */
+
+const workspaceView = {
+  data: null,
+  interval: "annual",
+
+  async open(query) {
+    for (const id of ["view-home", "view-ide", "view-player", "view-org"]) $(id).hidden = true;
+    $("view-workspace").hidden = false;
+    document.title = `Workspace · ${app.info?.app_name ?? ""}`;
+    renderUser();
+    const billing = new URLSearchParams(query || "").get("billing");
+    if (billing === "success") toast("Thanks! Your plan updates as soon as Stripe confirms the payment.");
+    if (billing === "cancelled") toast("Checkout cancelled. Nothing was charged.");
+    if (!app.me) {
+      $("view-workspace").replaceChildren(
+        h("section", { class: "tile span-6 static" }, h("h2", {}, "Sign in required"),
+          h("p", { class: "help" }, app.forbidden || "Sign in to see this workspace's plan and members."),
+          app.info?.google_enabled ? h("a", { class: "btn btn-primary", href: "/auth/google?next=/%23/workspace" }, "Interviewer sign in") : null),
+      );
+      return;
+    }
+    await this.refresh();
+  },
+
+  async refresh() {
+    try {
+      this.data = await api("/api/workspace");
+      if (this.data.billing_interval) this.interval = this.data.billing_interval;
+    } catch (err) {
+      toast(err.message);
+      return;
+    }
+    this.render();
+  },
+
+  isAdmin() {
+    return ["owner", "admin"].includes(this.data?.role);
+  },
+
+  async go(path) {
+    try {
+      const { url } = await api(path, { method: "POST", body: path.endsWith("checkout") ? this.pending : undefined });
+      location.href = url;
+    } catch (err) {
+      toast(err.message);
+    }
+  },
+
+  render() {
+    const tiles = [this.headerTile(), this.usageTile()];
+    if (this.isAdmin()) tiles.push(this.plansTile(), this.membersTile(), this.domainsTile());
+    $("view-workspace").replaceChildren(...tiles.filter(Boolean));
+    staggerTiles($("view-workspace"));
+  },
+
+  headerTile() {
+    const d = this.data;
+    return h("section", { class: "tile span-6 static" },
+      h("div", { class: "tile-head" },
+        h("div", { class: "grow" }, h("h2", {}, d.name),
+          h("span", { class: "caption" }, `${d.url.replace(/^https?:\/\//, "")} · your role: ${d.role}`)),
+        h("a", { class: "btn btn-sm", href: "#/" }, "← Portal"),
+      ),
+      h("div", { class: "status-line" },
+        h("span", { class: `chip ${["expired", "past_due", "canceled"].includes(d.state) ? "chip-warn" : "chip-ok"}` }, workspaceStatus(d)),
+        d.state === "expired" ? "Choose a plan to keep creating sessions. Your sessions and recordings are kept." : null),
+    );
+  },
+
+  usageTile() {
+    const u = this.data.usage;
+    const pct = u.credits_included ? Math.min(100, Math.round((u.credits_used / u.credits_included) * 100)) : 0;
+    const over = u.credits_included != null && u.credits_used > u.credits_included;
+    return h("section", { class: "tile span-3 static" },
+      h("h2", {}, "Interview credits"),
+      h("p", { class: "help" }, "One credit when a candidate joins a live interview or starts a take-home. Practice sessions are free."),
+      h("div", { class: "meter-label" }, h("strong", {}, `${u.credits_used}`), ` of ${u.credits_included ?? "∞"} used this period`),
+      h("div", { class: `meter${over ? " over" : ""}`, role: "progressbar", "aria-valuenow": String(pct), "aria-valuemin": "0", "aria-valuemax": "100" },
+        h("span", { style: `width: ${pct}%` })),
+      u.overage_rate ? h("p", { class: "help" }, `Past the allowance: $${u.overage_rate} per credit.`) : null,
+      this.data.trial_days_left != null ? h("p", { class: "help" }, `Your trial ends in ${this.data.trial_days_left} days. Upgrading keeps every session.`) : null,
+      this.isAdmin() && this.data.has_billing_account
+        ? h("button", { class: "btn", type: "button", onclick: () => this.go("/api/workspace/portal") }, "Manage billing & invoices")
+        : null,
+    );
+  },
+
+  plansTile() {
+    const d = this.data;
+    const intervalToggle = h("div", { class: "segmented", role: "group", "aria-label": "Billing interval" },
+      ...[["annual", "Annual"], ["monthly", "Monthly"]].map(([value, label]) =>
+        h("button", { type: "button", class: this.interval === value ? "active" : "", "aria-pressed": String(this.interval === value),
+          onclick: () => { this.interval = value; this.render(); } }, label)));
+    const cards = d.plans.filter((p) => ["starter", "team"].includes(p.id)).map((p) => {
+      const price = this.interval === "annual" ? p.annual_price : p.monthly_price;
+      const current = d.plan === p.id && d.state !== "expired";
+      return h("div", { class: `plan-card${p.id === "team" ? " featured" : ""}` },
+        h("div", { class: "row" }, h("strong", { class: "grow" }, p.name), p.id === "team" ? h("span", { class: "chip" }, "Most popular") : null),
+        h("div", { class: "plan-price" }, `$${price}`, h("span", {}, "/mo")),
+        h("span", { class: "caption" }, this.interval === "annual" ? "billed annually" : "billed monthly"),
+        h("span", { class: "help" }, `${p.credits} credits a month · $${p.overage} per extra credit`),
+        h("button", { class: `btn ${p.id === "team" ? "btn-primary" : ""}`, type: "button", disabled: current || !d.billing_enabled,
+          onclick: () => { this.pending = { plan: p.id, interval: this.interval }; this.go("/api/workspace/checkout"); } },
+          current ? "Current plan" : `Choose ${p.name}`),
+      );
+    });
+    return h("section", { class: "tile span-3 static" },
+      h("div", { class: "tile-head" }, h("h2", { class: "grow" }, "Plans"), intervalToggle),
+      h("div", { class: "plan-cards" }, ...cards),
+      d.billing_enabled ? h("p", { class: "help" }, "Checkout is handled by Stripe. Need a dedicated instance or SSO? Talk to us about Enterprise.")
+        : h("p", { class: "help" }, "Billing isn't configured on this server yet."),
+    );
+  },
+
+  membersTile() {
+    const rows = this.data.members.map((m) =>
+      h("div", { class: "org-row" },
+        h("span", { class: "grow", title: m.email }, m.email),
+        h("span", { class: `chip ${m.role === "interviewer" ? "chip-muted" : ""}` }, m.role),
+        m.role === "owner" ? null : h("button", { class: "btn btn-sm btn-danger", type: "button", onclick: async () => {
+          try { await api(`/api/workspace/members/${encodeURIComponent(m.email)}`, { method: "DELETE" }); toast("Removed"); await this.refresh(); }
+          catch (err) { toast(err.message); }
+        } }, "Remove"),
+      ));
+    const email = h("input", { class: "input", type: "email", placeholder: "teammate@company.com", required: true });
+    const role = h("select", { class: "input" }, h("option", { value: "interviewer" }, "Interviewer"), h("option", { value: "admin" }, "Admin"));
+    const form = h("form", { class: "inline-form", onsubmit: async (e) => {
+      e.preventDefault();
+      try { await api("/api/workspace/members", { method: "POST", body: { email: email.value.trim(), role: role.value } }); toast("Member added"); await this.refresh(); }
+      catch (err) { toast(err.message); }
+    } }, fieldEl("Email", email), fieldEl("Role", role), h("button", { class: "btn btn-primary", type: "submit" }, "Add"));
+    return h("section", { class: "tile span-3 static" },
+      h("div", { class: "tile-head" }, h("h2", { class: "grow" }, "Members"), h("span", { class: "caption" }, String(this.data.members.length))),
+      h("p", { class: "help" }, "Members sign in with Google at this subdomain. Interviewers are unlimited on every plan."),
+      h("div", { class: "org-list" }, ...rows),
+      form,
+    );
+  },
+
+  domainsTile() {
+    const input = h("input", { class: "input", placeholder: "acme.com, acme.io", value: this.data.allowed_domains.join(", ") });
+    return h("section", { class: "tile span-3 static" },
+      h("h2", {}, "Sign-in domains"),
+      h("p", { class: "help" }, "Anyone with a Google account on these domains can sign in as an interviewer without an invite."),
+      h("form", { class: "inline-form", onsubmit: async (e) => {
+        e.preventDefault();
+        try {
+          this.data = await api("/api/workspace", { method: "PUT", body: { allowed_domains: splitIds(input.value) } });
+          toast("Saved");
+          this.render();
+        } catch (err) { toast(err.message); }
+      } }, fieldEl("Domains", input), h("button", { class: "btn btn-primary", type: "submit" }, "Save")),
+    );
+  },
+};
+
 /* Routing ----------------------------------------------------------------------------- */
 
 async function route() {
@@ -1982,6 +2168,15 @@ async function route() {
     await joinWithLink(decodeURIComponent(invite[1]));
     return;
   }
+  const workspaceRoute = location.hash.match(/^#\/workspace(?:\?(.*))?$/);
+  if (workspaceRoute && app.info?.workspace) {
+    if (ide.sessionId) await ide.flushAll();
+    ide.close();
+    player.close();
+    await workspaceView.open(workspaceRoute[1]);
+    return;
+  }
+  $("view-workspace").hidden = true;
   const orgRoute = location.hash.match(/^#\/org(?:\/([A-Za-z0-9]+))?/);
   if (orgRoute) {
     if (ide.sessionId) await ide.flushAll();

@@ -7,6 +7,7 @@ With ROOT_DOMAIN unset the app runs as a single workspace, exactly as before.
 
 from __future__ import annotations
 
+import base64
 import html
 import logging
 import re
@@ -26,6 +27,7 @@ from starlette.datastructures import Headers
 from starlette.responses import HTMLResponse
 
 from app.config import Settings
+from app.crypto import key_workspace
 from app.platform import PlatformStore
 from app.repository import Repository
 
@@ -278,6 +280,20 @@ class TenantRegistry:
         return role
 
 
+def api_key_workspace(authorization: str) -> str | None:
+    """Workspace slug from a `wmc_<slug>.<token>` key sent as Bearer or as the Basic username."""
+    scheme, _, value = authorization.partition(" ")
+    value = value.strip()
+    if scheme.lower() == "basic":
+        try:
+            value = base64.b64decode(value).decode().partition(":")[0]
+        except (ValueError, UnicodeDecodeError):
+            return None
+    elif scheme.lower() != "bearer":
+        return None
+    return key_workspace(value)
+
+
 def _not_found(settings: Settings, host: str) -> HTMLResponse:
     apex = html.escape(apex_url(settings))
     body = (
@@ -303,8 +319,13 @@ class TenantMiddleware:
         if scope["type"] not in ("http", "websocket") or not self.registry.enabled:
             await self.app(scope, receive, send)
             return
-        host = Headers(scope=scope).get("host", "")
-        match = await run_in_threadpool(self.registry.match, host)
+        headers = Headers(scope=scope)
+        match = await run_in_threadpool(self.registry.match, headers.get("host", ""))
+        if match.kind == "apex":
+            scoped = api_key_workspace(headers.get("authorization", ""))
+            tenant = await run_in_threadpool(self.registry.tenant, scoped) if scoped else None
+            if tenant is not None and tenant["status"] != "deleted":
+                match = HostMatch("tenant", tenant, match.host)
         if match.kind == "unknown":
             path = scope.get("path", "")
             if path.startswith("/static/") or path == "/favicon.svg":

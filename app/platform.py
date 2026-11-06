@@ -208,6 +208,21 @@ class PlatformStore(Repository):
             )
         return int(row["used"]) if row else 0
 
+    def count_usage(self, tenant_id: str, since: str, kind: str) -> int:
+        with self.connect() as conn:
+            row = conn.one(
+                "SELECT COUNT(*) AS n FROM usage_events WHERE tenant_id = ? AND created_at >= ? AND kind = ?",
+                (tenant_id, since, kind),
+            )
+        return int(row["n"]) if row else 0
+
+    def session_metered(self, tenant_id: str, session_id: str) -> bool:
+        with self.connect() as conn:
+            return conn.one(
+                "SELECT 1 AS hit FROM usage_events WHERE tenant_id = ? AND session_id = ? LIMIT 1",
+                (tenant_id, session_id),
+            ) is not None
+
     def recent_usage(self, tenant_id: str, limit: int = 20) -> list[dict[str, Any]]:
         with self.connect() as conn:
             return conn.all(

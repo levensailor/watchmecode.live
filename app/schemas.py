@@ -48,6 +48,7 @@ class AppInfoOut(BaseModel):
     author: str
     google_enabled: bool
     storage: Literal["sqlite", "postgres"]
+    workspace: dict[str, Any] | None = Field(default=None, description="Workspace brief in multi-tenant mode")
 
 
 SessionMode = Literal["live", "take_home"]
