@@ -1,0 +1,35 @@
+{% extends "site/base.html" %}
+{% block title %}Features · {{ app_name }}{% endblock %}
+{% block description %}A shared IDE for live interviews and take-homes: 10 languages, automatic installs, recording and playback, a candidate portal, and ATS integrations.{% endblock %}
+{% block content %}
+<main>
+  <section class="site-wrap page-head">
+    <span class="eyebrow">Features</span>
+    <h1>Built for the interview, the take-home, and the debrief.</h1>
+    <p class="lede">Everything below ships today. Screenshots are from the product.</p>
+  </section>
+
+  {% for group in features %}
+  <section class="site-wrap feature-group">
+    <h2 class="group-title">{{ group.group }}</h2>
+    {% for title, body, image in group["items"] %}
+    <article class="feature-row{% if loop.index is even %} flip{% endif %}">
+      <div class="feature-copy">
+        <h3>{{ title }}</h3>
+        <p>{{ body }}</p>
+      </div>
+      <figure class="shot"><img src="/static/marketing/{{ image }}" alt="{{ title }}" loading="lazy" /></figure>
+    </article>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  <section class="site-wrap">
+    <div class="section-head"><h2>Every language your team hires for.</h2></div>
+    <div class="chip-cloud">
+      {% for label in languages %}<span class="chip">{{ label }}</span>{% endfor %}
+      <span class="chip chip-accent">SQL lab</span><span class="chip chip-accent">React lab</span><span class="chip chip-accent">Whiteboard</span>
+    </div>
+  </section>
+</main>
+{% endblock %}

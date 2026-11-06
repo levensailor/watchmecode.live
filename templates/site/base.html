@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}{{ app_name }} · Live coding interviews that feel like pairing{% endblock %}</title>
+    <meta name="description" content="{% block description %}Live coding interviews and take-homes in a shared IDE. Ten languages, recordings with playback, Ashby and ModernLoop integrations, and a workspace of your own. Free for 14 days.{% endblock %}" />
+    <link rel="canonical" href="{{ canonical }}" />
+    <meta property="og:title" content="{{ self.title() }}" />
+    <meta property="og:description" content="{{ self.description() }}" />
+    <meta property="og:image" content="{{ apex }}/static/og.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/static/favicon-120.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/site.css?v={{ version }}" />
+    <script>
+      (() => {
+        const saved = localStorage.getItem("wmc:theme");
+        const dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      })();
+    </script>
+  </head>
+  <body data-page="{{ page }}" data-legacy-app="{{ legacy_app_url }}" data-tenant-template="{{ tenant_template }}">
+    <header class="site-top">
+      <a class="brand" href="/"><img src="/favicon.svg" alt="" width="30" height="30" /><span>{{ app_name }}</span></a>
+      <nav class="site-nav" aria-label="Product">
+        {% for key, label, href in nav %}
+        <a href="{{ href }}"{% if page == key %} aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+      </nav>
+      <div class="site-actions">
+        <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">◐</button>
+        <a class="btn btn-ghost" href="/login" id="nav-signin">Sign in</a>
+        <a class="btn btn-primary" href="/signup">Start free trial</a>
+        <button class="icon-btn nav-toggle" id="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false">☰</button>
+      </div>
+    </header>
+
+    {% block content %}{% endblock %}
+
+    <section class="site-band cta-band">
+      <div class="site-wrap cta-inner">
+        <div>
+          <h2>Run your next interview here.</h2>
+          <p>{{ trial_days }} days of Team, 15 interview credits, your own subdomain. No card.</p>
+        </div>
+        <div class="row">
+          <a class="btn btn-light btn-lg" href="/signup">Start free trial</a>
+          <a class="btn btn-outline-light btn-lg" href="/pricing">See pricing</a>
+        </div>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <div class="site-wrap footer-grid">
+        <div>
+          <a class="brand" href="/"><img src="/favicon.svg" alt="" width="26" height="26" /><span>{{ app_name }}</span></a>
+          <p class="muted">Live coding interviews that feel like pairing.</p>
+        </div>
+        <div>
+          <h4>Product</h4>
+          <a href="/features">Features</a><a href="/labs">Labs</a><a href="/integrations">Integrations</a><a href="/pricing">Pricing</a>
+        </div>
+        <div>
+          <h4>Company</h4>
+          <a href="/customers">Customers</a><a href="/security">Security</a><a href="{{ settings.contact_url }}">Contact</a><a href="/docs">API docs</a>
+        </div>
+        <div>
+          <h4>Legal</h4>
+          <a href="/privacy">Privacy</a><a href="/terms">Terms</a>
+        </div>
+      </div>
+      <div class="site-wrap footer-base muted">© {{ year }} {{ app_name }}</div>
+    </footer>
+    <script src="/static/site.js?v={{ version }}" defer></script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

@@ -1,0 +1,44 @@
+{% extends "site/base.html" %}
+{% block title %}Customers · {{ app_name }}{% endblock %}
+{% block description %}How engineering and recruiting teams use {{ app_name }} for live interviews, take-homes, and faster debriefs.{% endblock %}
+{% block content %}
+<main>
+  <section class="site-wrap page-head">
+    <span class="eyebrow">Customers</span>
+    <h1>Hiring teams that interview every week.</h1>
+    <p class="lede">From a first technical screen to the final loop, teams use one workspace for every coding interview.</p>
+  </section>
+
+  <section class="site-wrap quote-grid">
+    {% for t in testimonials %}
+    <figure class="card quote">
+      <blockquote>“{{ t.quote }}”</blockquote>
+      <figcaption><strong>{{ t.who }}</strong><span>{{ t.org }}</span></figcaption>
+    </figure>
+    {% endfor %}
+  </section>
+
+  <section class="site-wrap use-cases">
+    <article class="card">
+      <h3>Engineering managers</h3>
+      <p>Run a live pairing interview in any language, record it, and send the 4x playback to the hiring committee instead of a page of notes.</p>
+    </article>
+    <article class="card">
+      <h3>Recruiting coordinators</h3>
+      <p>Connect Ashby or ModernLoop once. Every scheduled interview gets a session and the candidate gets the link in their invite.</p>
+    </article>
+    <article class="card">
+      <h3>Hiring committees</h3>
+      <p>Open the candidate portal to see every session, the final code, every run, and the recording, all in one place.</p>
+    </article>
+    <article class="card">
+      <h3>Data and analytics teams</h3>
+      <p>Use the SQL lab with your own seed tables to test real querying, not trivia.</p>
+    </article>
+  </section>
+
+  <section class="site-wrap">
+    <figure class="shot wide"><img src="/static/marketing/portal.webp" alt="The candidate portal grouping sessions by candidate" loading="lazy" /></figure>
+  </section>
+</main>
+{% endblock %}

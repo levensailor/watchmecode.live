@@ -1,0 +1,107 @@
+{% extends "site/base.html" %}
+{% block content %}
+<main>
+  <section class="site-wrap hero-split">
+    <div class="hero-copy">
+      <span class="eyebrow">Live interviews · Take-homes · Labs</span>
+      <h1>Coding interviews that feel like pairing.</h1>
+      <p class="lede">Share a PIN, code together in a real IDE, and replay every keystroke afterward. Ten languages, automatic package installs, and your ATS kept in sync.</p>
+      <div class="row">
+        <a class="btn btn-primary btn-lg" href="/signup">Start free trial</a>
+        <a class="btn btn-lg" href="/features">See it in action</a>
+      </div>
+      <p class="fine">{{ trial_days }} days free · No card · Unlimited interviewers</p>
+    </div>
+    <figure class="hero-shot">
+      <img class="only-light" src="/static/marketing/ide-light.webp" alt="The shared IDE with a Python two-sum solution, file explorer, output, and console" width="1440" height="900" />
+      <img class="only-dark" src="/static/marketing/ide-dark.webp" alt="The shared IDE in dark mode" width="1440" height="900" loading="lazy" />
+    </figure>
+  </section>
+
+  <section class="site-wrap stat-strip" aria-label="At a glance">
+    <div><strong>10</strong><span>languages + a web playground</span></div>
+    <div><strong>~1s</strong><span>edit sync between both sides</span></div>
+    <div><strong>4x</strong><span>playback for faster debriefs</span></div>
+    <div><strong>0</strong><span>installs for candidates</span></div>
+  </section>
+
+  <section class="site-wrap">
+    <div class="section-head">
+      <h2>Everything an interview needs. Nothing it doesn't.</h2>
+      <p>One shared workspace for the interview, the take-home, and the debrief.</p>
+    </div>
+    <div class="bento-grid">
+      <article class="card span-4 media-card">
+        <div><h3>Shared IDE with equal control</h3><p>Explorer, tabs, editor, console, and preview. Both people type, run, and see who changed what.</p></div>
+        <img src="/static/marketing/preview.webp" alt="A web pricing calculator rendered in the live preview" loading="lazy" />
+      </article>
+      <article class="card span-2">
+        <h3>Run with automatic installs</h3>
+        <p>Write <code>import requests</code> and press Run. Packages install on demand.</p>
+        <img src="/static/marketing/run.webp" alt="Console showing Installing requests and the program output" loading="lazy" />
+      </article>
+      <article class="card span-3">
+        <h3>Recording and playback</h3>
+        <p>Replay every keystroke, file change, and run at 1x, 2x, or 4x.</p>
+        <img src="/static/marketing/playback.gif" alt="Playback of a candidate typing a two-sum solution" loading="lazy" />
+      </article>
+      <article class="card span-3">
+        <h3>Timed take-homes</h3>
+        <p>Reusable assessments with a countdown and a Submit button. Results go back to your ATS.</p>
+        <img src="/static/marketing/take-home.webp" alt="Take-home toolbar with a countdown and Submit" loading="lazy" />
+      </article>
+      <article class="card span-2 accent-card">
+        <h3>Your own subdomain</h3>
+        <p><code>acme.{{ root_domain }}</code> with its own members, API keys, and database schema.</p>
+        <a class="link-arrow" href="/security">How isolation works</a>
+      </article>
+      <article class="card span-2">
+        <h3>Ashby and ModernLoop</h3>
+        <p>Scheduled interviews become sessions. Results, code, and playback land on the candidate.</p>
+        <a class="link-arrow" href="/integrations">Integrations</a>
+      </article>
+      <article class="card span-2">
+        <h3>Labs beyond algorithms</h3>
+        <p>SQL with seeded tables, React with live preview, and a shared whiteboard for system design.</p>
+        <a class="link-arrow" href="/labs">Explore labs</a>
+      </article>
+    </div>
+  </section>
+
+  <section class="site-wrap">
+    <div class="section-head"><h2>Three steps, no setup.</h2></div>
+    <ol class="steps-grid">
+      <li><span>1</span><h3>Create a session</h3><p>Name the candidate and pick a language, or let Ashby and ModernLoop create it for you.</p></li>
+      <li><span>2</span><h3>Share the PIN or link</h3><p>The candidate opens it in any browser. No account, no download, no extension.</p></li>
+      <li><span>3</span><h3>Code, then replay</h3><p>Pair in real time, then replay the interview at 4x with the hiring committee.</p></li>
+    </ol>
+  </section>
+
+  <section class="site-wrap">
+    <div class="section-head"><h2>Teams that interview every week.</h2></div>
+    <div class="quote-grid">
+      {% for t in testimonials %}
+      <figure class="card quote">
+        <blockquote>“{{ t.quote }}”</blockquote>
+        <figcaption><strong>{{ t.who }}</strong><span>{{ t.org }}</span></figcaption>
+      </figure>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="site-wrap pricing-teaser card">
+    <div>
+      <h2>About 3x more interviews per dollar.</h2>
+      <p>Team is ${{ plans.team.annual_price }}/mo for {{ plans.team.credits }} interviews a month, with ATS integrations included. Every plan has unlimited interviewers.</p>
+    </div>
+    <a class="btn btn-primary btn-lg" href="/pricing">Compare plans</a>
+  </section>
+
+  <section class="site-wrap security-strip" aria-label="Security">
+    <div><strong>Google sign-in with PKCE</strong><span>No passwords to leak</span></div>
+    <div><strong>Schema per workspace</strong><span>Dedicated instances on Enterprise</span></div>
+    <div><strong>Encrypted credentials</strong><span>ATS keys sealed at rest</span></div>
+    <div><strong>Signed webhooks</strong><span>HMAC-verified, replay-safe</span></div>
+  </section>
+</main>
+{% endblock %}

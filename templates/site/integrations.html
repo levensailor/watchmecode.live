@@ -1,0 +1,65 @@
+{% extends "site/base.html" %}
+{% block title %}Integrations · {{ app_name }}{% endblock %}
+{% block description %}Ashby, ModernLoop, and a public API. Scheduled interviews become sessions and results go back to the candidate profile.{% endblock %}
+{% block content %}
+<main>
+  <section class="site-wrap page-head">
+    <span class="eyebrow">Integrations</span>
+    <h1>Your ATS does the scheduling. We do the rest.</h1>
+    <p class="lede">Connect once in workspace settings. Interviews get a session automatically, candidates get the link in their invite, and results land back on their profile.</p>
+  </section>
+
+  <section class="site-wrap integration-grid">
+    <article class="card">
+      <div class="row"><h3 class="grow">Ashby</h3><span class="chip chip-ok">Live</span></div>
+      <ul class="ticks">
+        <li>Sessions created from interview schedules through signed webhooks</li>
+        <li>Join link written to a candidate field for email templates</li>
+        <li>Results, the final code (zip), and playback posted back</li>
+        <li>Take-homes through Ashby's Assessments framework</li>
+      </ul>
+    </article>
+    <article class="card">
+      <div class="row"><h3 class="grow">ModernLoop</h3><span class="chip chip-ok">Live</span></div>
+      <ul class="ticks">
+        <li>Polls scheduled interviews every 10 minutes</li>
+        <li>Creates a session and adds the interviewers</li>
+        <li>Cleans up when an interview is cancelled</li>
+        <li>Skips candidates Ashby already handles</li>
+      </ul>
+    </article>
+    <article class="card">
+      <div class="row"><h3 class="grow">Public API</h3><span class="chip chip-ok">Live</span></div>
+      <p>Create a pad from any scheduler, ATS, or script and get a candidate join link back.</p>
+      <pre class="code"><code>curl -X POST https://{{ root_domain }}/v1/pads \
+  -H "Authorization: Bearer wmc_acme.…" \
+  -H "Content-Type: application/json" \
+  -d '{"candidate_name": "Ada Lovelace",
+       "language": "python"}'</code></pre>
+      <p class="muted">Returns <code>join_url</code>, <code>interviewer_url</code>, and results once the pad ends.</p>
+    </article>
+  </section>
+
+  <section class="site-wrap">
+    <figure class="shot wide"><img src="/static/marketing/integrations.webp" alt="Ashby and ModernLoop settings in a workspace" loading="lazy" /></figure>
+  </section>
+
+  <section class="site-wrap">
+    <div class="section-head"><h2>Coming next</h2><p>Ordered by what customers ask for most.</p></div>
+    <div class="roadmap">
+      {% for name, note in [
+        ("Greenhouse", "Assessment partner API: test requests in, status and score out"),
+        ("Lever", "Stage-change webhooks in, notes and feedback out"),
+        ("Kombo", "One integration for Workday, SuccessFactors, SmartRecruiters, and more"),
+        ("Slack", "Create a pad with a slash command, get playback when it ends"),
+        ("Google Calendar and Outlook", "Join links added to interview invites automatically"),
+        ("Google Meet, Zoom, Teams", "The IDE inside the meeting"),
+        ("WorkOS SSO and SCIM", "Okta, Entra, and Google directory sync (Enterprise)"),
+        ("Outbound webhooks", "session.ended and assessment.submitted for Zapier, Make, and n8n"),
+      ] %}
+      <div class="roadmap-row"><strong>{{ name }}</strong><span>{{ note }}</span></div>
+      {% endfor %}
+    </div>
+  </section>
+</main>
+{% endblock %}

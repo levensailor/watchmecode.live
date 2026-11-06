@@ -1,0 +1,54 @@
+{% extends "site/base.html" %}
+{% block title %}Sign in · {{ app_name }}{% endblock %}
+{% block content %}
+<main class="site-wrap auth-layout" data-root="{{ root_domain }}">
+  <section class="card auth-card" id="login">
+    <h1>Sign in</h1>
+    {% if error == "not_member" %}
+    <p class="banner">You're signed in, but you're not a member of <strong>{{ tenant }}</strong>. Ask one of its admins to add you, or sign in with a different Google account.</p>
+    {% elif error == "unknown_workspace" %}
+    <p class="banner">There's no workspace called <strong>{{ tenant }}</strong>.</p>
+    {% endif %}
+
+    <div id="signed-out">
+      <p class="muted">Interviewers sign in with Google. We'll take you to your workspace.</p>
+      {% if google_enabled %}<a class="btn btn-primary btn-lg" href="/auth/google?next=/login">Continue with Google</a>{% endif %}
+    </div>
+
+    <div id="signed-in" hidden>
+      <p class="muted">Signed in as <strong id="me-email"></strong>. <a href="/auth/logout">Not you?</a></p>
+      <div class="workspace-list" id="workspace-list"></div>
+      <p id="no-workspaces" class="muted" hidden>You're not in any workspaces yet.</p>
+      <a class="btn btn-lg" href="/signup">Create a workspace</a>
+    </div>
+
+    <hr />
+    <form class="stack" id="goto-form" autocomplete="off">
+      <label class="field"><span>Go to a workspace</span>
+        <div class="slug-input">
+          <input class="input" id="goto-slug" placeholder="your-team" maxlength="31" required spellcheck="false" />
+          <span class="suffix">.{{ root_domain }}</span>
+        </div>
+      </label>
+      <button class="btn" type="submit">Go</button>
+    </form>
+  </section>
+
+  <section class="card auth-card">
+    <h2>Candidate?</h2>
+    <p class="muted">Use the link from your invitation, or enter the workspace and PIN your interviewer shared.</p>
+    <form class="stack" id="candidate-form" autocomplete="off">
+      <label class="field"><span>Workspace</span>
+        <div class="slug-input">
+          <input class="input" id="cand-slug" placeholder="acme" maxlength="31" required spellcheck="false" />
+          <span class="suffix">.{{ root_domain }}</span>
+        </div>
+      </label>
+      <label class="field"><span>PIN</span>
+        <input class="input pin" id="cand-pin" inputmode="numeric" pattern="\d{6}" maxlength="6" placeholder="••••••" required />
+      </label>
+      <button class="btn btn-primary" type="submit">Join interview</button>
+    </form>
+  </section>
+</main>
+{% endblock %}

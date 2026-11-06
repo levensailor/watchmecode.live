@@ -17,5 +17,5 @@ logs/
 *.db
 *.db-*
 .pytest_cache/
-site/
+/site/
 .vercel

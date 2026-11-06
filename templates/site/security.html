@@ -1,0 +1,58 @@
+{% extends "site/base.html" %}
+{% block title %}Security · {{ app_name }}{% endblock %}
+{% block description %}Workspace isolation, Google sign-in, encrypted integration credentials, signed webhooks, and dedicated instances for Enterprise.{% endblock %}
+{% block content %}
+<main>
+  <section class="site-wrap page-head">
+    <span class="eyebrow">Security</span>
+    <h1>Isolation is a feature.</h1>
+    <p class="lede">Candidate code and ATS data are sensitive. Here's how we keep each customer's workspace separate and its credentials sealed.</p>
+  </section>
+
+  <section class="site-wrap use-cases">
+    <article class="card">
+      <h3>A schema per workspace</h3>
+      <p>Each workspace (<code>acme.{{ root_domain }}</code>) stores its sessions, files, runs, recordings, and integrations in its own Postgres schema. Requests are routed by subdomain before any query runs.</p>
+    </article>
+    <article class="card">
+      <h3>Dedicated instances</h3>
+      <p>Enterprise workspaces run on their own deployment and database, in the region you choose, with a custom domain if you want one.</p>
+    </article>
+    <article class="card">
+      <h3>Sign-in</h3>
+      <p>Interviewers sign in with Google (OpenID Connect with PKCE). Sessions are bound to the workspace they were issued for, and hand-offs between our sign-in hub and workspaces use single-use Ed25519-signed tokens that expire in two minutes.</p>
+    </article>
+    <article class="card">
+      <h3>Candidates</h3>
+      <p>Candidates don't need an account. Their access is a signed, time-limited token for one session.</p>
+    </article>
+    <article class="card">
+      <h3>Secrets</h3>
+      <p>ATS API keys and webhook secrets are encrypted at rest (Fernet). Our API keys are stored only as SHA-256 hashes.</p>
+    </article>
+    <article class="card">
+      <h3>Webhooks and billing</h3>
+      <p>Ashby and Stripe webhooks are verified with HMAC signatures, and Stripe events are processed once even when they're retried.</p>
+    </article>
+    <article class="card">
+      <h3>Code execution</h3>
+      <p>Candidate code runs in short-lived sandboxes with time and output limits. Sandbox labs run in Firecracker microVMs.</p>
+    </article>
+    <article class="card">
+      <h3>Your data, your call</h3>
+      <p>Admins can end sessions, export code as a zip, and request deletion. See the <a href="/privacy">privacy policy</a>.</p>
+    </article>
+  </section>
+
+  <section class="site-wrap card note-card">
+    <h2>Subprocessors</h2>
+    <div class="roadmap">
+      <div class="roadmap-row"><strong>Vercel</strong><span>Hosting, serverless functions, and sandboxes (US East)</span></div>
+      <div class="roadmap-row"><strong>Supabase</strong><span>Postgres database (US East)</span></div>
+      <div class="roadmap-row"><strong>Google</strong><span>Interviewer sign-in</span></div>
+      <div class="roadmap-row"><strong>Stripe</strong><span>Subscriptions and invoices</span></div>
+      <div class="roadmap-row"><strong>Resend</strong><span>Take-home invitation emails</span></div>
+    </div>
+  </section>
+</main>
+{% endblock %}

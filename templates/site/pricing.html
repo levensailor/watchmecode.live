@@ -1,0 +1,120 @@
+{% extends "site/base.html" %}
+{% block title %}Pricing · {{ app_name }}{% endblock %}
+{% block description %}Starter from ${{ plans.starter.annual_price }}/mo, Team from ${{ plans.team.annual_price }}/mo with ATS integrations, and Enterprise with a dedicated instance. 14-day free trial, no card.{% endblock %}
+{% block content %}
+<main>
+  <section class="site-wrap page-head center">
+    <span class="eyebrow">Pricing</span>
+    <h1>Pay for interviews, not seats.</h1>
+    <p class="lede">Every plan includes unlimited interviewers. One credit per candidate interview or take-home.</p>
+    <div class="segmented big" role="group" aria-label="Billing interval" id="interval-toggle">
+      <button type="button" class="active" data-interval="annual" aria-pressed="true">Annual <span class="save">save ~17%</span></button>
+      <button type="button" data-interval="monthly" aria-pressed="false">Monthly</button>
+    </div>
+  </section>
+
+  <section class="site-wrap price-grid">
+    <article class="card price-card">
+      <h3>Free trial</h3>
+      <p class="muted">Try everything in Team.</p>
+      <div class="price">$0<span>/{{ trial_days }} days</span></div>
+      <a class="btn btn-lg" href="/signup">Start free trial</a>
+      <ul class="ticks">
+        <li>All Team features</li>
+        <li>{{ plans.trial.credits }} interview credits</li>
+        <li>Your own subdomain from day one</li>
+        <li>No card required</li>
+      </ul>
+    </article>
+    {% for plan in [plans.starter, plans.team] %}
+    <article class="card price-card{% if plan.id == 'team' %} featured{% endif %}">
+      <div class="row"><h3 class="grow">{{ plan.name }}</h3>{% if plan.id == 'team' %}<span class="chip chip-accent">Most popular</span>{% endif %}</div>
+      <p class="muted">{{ plan.blurb }}.</p>
+      <div class="price"><span class="amount" data-annual="${{ plan.annual_price }}" data-monthly="${{ plan.monthly_price }}">${{ plan.annual_price }}</span><span>/mo</span></div>
+      <p class="fine billed" data-annual="billed annually (${{ plan.annual_price * 12 }}/yr)" data-monthly="billed monthly">billed annually (${{ plan.annual_price * 12 }}/yr)</p>
+      <a class="btn btn-lg{% if plan.id == 'team' %} btn-primary{% endif %}" href="/signup?plan={{ plan.id }}">Start with {{ plan.name }}</a>
+      <ul class="ticks">
+        <li><strong>{{ plan.credits }} credits a month</strong>{% if plan.id == 'team' %} with one-month rollover{% endif %}</li>
+        <li>${{ plan.overage }} per extra credit</li>
+        {% if plan.id == 'starter' %}
+        <li>All 10 languages and the web playground</li>
+        <li>Recordings, playback, and the candidate portal</li>
+        <li>{{ plan.take_homes }} take-homes a month</li>
+        <li>Email support</li>
+        {% else %}
+        <li>Everything in Starter</li>
+        <li>Ashby, ModernLoop, and the public API</li>
+        <li>Unlimited take-homes</li>
+        <li>SQL, React, and whiteboard labs</li>
+        <li>Sandbox labs and custom branding</li>
+        {% endif %}
+      </ul>
+    </article>
+    {% endfor %}
+    <article class="card price-card dark">
+      <h3>Enterprise</h3>
+      <p class="muted">A dedicated instance for regulated teams.</p>
+      <div class="price">From $1K<span>/mo</span></div>
+      <a class="btn btn-light btn-lg" href="{{ settings.contact_url }}">Talk to us</a>
+      <ul class="ticks">
+        <li>Everything in Team</li>
+        <li>Dedicated deployment, database, and region</li>
+        <li>SSO/SAML and SCIM, audit logs</li>
+        <li>Custom domain and cloud labs</li>
+        <li>DPA, 99.9% SLA, volume credits</li>
+      </ul>
+    </article>
+  </section>
+
+  <section class="site-wrap">
+    <div class="section-head"><h2>Compare plans</h2></div>
+    <div class="table-wrap">
+      <table class="compare">
+        <thead><tr><th></th><th>Trial</th><th>Starter</th><th>Team</th><th>Enterprise</th></tr></thead>
+        <tbody>
+          {% set rows = [
+            ("Interviewers", "Unlimited", "Unlimited", "Unlimited", "Unlimited"),
+            ("Interview credits", plans.trial.credits ~ " total", plans.starter.credits ~ "/mo", plans.team.credits ~ "/mo", "Volume"),
+            ("Overage per credit", "—", "$" ~ plans.starter.overage, "$" ~ plans.team.overage, "Custom"),
+            ("10 languages and web playground", "✓", "✓", "✓", "✓"),
+            ("Recording and playback", "✓", "✓", "✓", "✓"),
+            ("Invite links and candidate portal", "✓", "✓", "✓", "✓"),
+            ("Take-homes", "Unlimited", plans.starter.take_homes ~ "/mo", "Unlimited", "Unlimited"),
+            ("Ashby and ModernLoop", "✓", "—", "✓", "✓"),
+            ("Public API", "✓", "—", "✓", "✓"),
+            ("SQL, React, and whiteboard labs", "✓", "—", "✓", "✓"),
+            ("Sandbox labs (2 credits)", "✓", "—", "✓", "✓"),
+            ("Own subdomain and database schema", "✓", "✓", "✓", "Dedicated instance"),
+            ("SSO/SAML, SCIM, audit logs", "—", "—", "—", "✓"),
+            ("Support", "Email", "Email", "Priority email", "SLA and Slack"),
+          ] %}
+          {% for row in rows %}
+          <tr><th scope="row">{{ row[0] }}</th>{% for cell in row[1:] %}<td{% if cell == '—' %} class="muted"{% endif %}>{{ cell }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="site-wrap">
+    <div class="section-head"><h2>How we compare</h2><p>Public list prices for the comparable tier, annual billing.</p></div>
+    <div class="table-wrap">
+      <table class="compare">
+        <thead><tr><th>Plan</th><th>Price</th><th>Interviews a month</th><th>ATS integrations</th></tr></thead>
+        <tbody>
+          {% for name, price, volume, ats in competitors %}
+          <tr{% if loop.first %} class="highlight"{% endif %}><th scope="row">{{ name }}</th><td>{{ price }}</td><td>{{ volume }}</td><td>{{ ats }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="site-wrap faq">
+    <div class="section-head"><h2>Questions</h2></div>
+    {% for q, a in faq %}
+    <details class="card"><summary>{{ q }}</summary><p>{{ a }}</p></details>
+    {% endfor %}
+  </section>
+</main>
+{% endblock %}

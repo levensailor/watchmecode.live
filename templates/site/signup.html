@@ -1,0 +1,50 @@
+{% extends "site/base.html" %}
+{% block title %}Start your free trial · {{ app_name }}{% endblock %}
+{% block content %}
+<main class="site-wrap auth-layout" data-root="{{ root_domain }}">
+  <section class="auth-pitch">
+    <span class="eyebrow">Free for {{ trial_days }} days</span>
+    <h1>Your interview workspace, ready in a minute.</h1>
+    <ul class="ticks big">
+      <li>All Team features, including Ashby, ModernLoop, and labs</li>
+      <li>{{ plans.trial.credits }} interview credits</li>
+      <li>Unlimited interviewers</li>
+      <li>No card. Choose a plan when you're ready, and keep everything.</li>
+    </ul>
+    <img class="only-light" src="/static/marketing/workspace.webp" alt="Workspace settings" loading="lazy" />
+    <img class="only-dark" src="/static/marketing/ide-dark.webp" alt="The IDE in dark mode" loading="lazy" />
+  </section>
+
+  <section class="card auth-card" id="signup">
+    <ol class="auth-steps">
+      <li id="step-account">
+        <h2>1. Sign in</h2>
+        <p class="muted" id="account-status">Use your work Google account. You'll be the workspace owner.</p>
+        {% if google_enabled %}
+        <a class="btn btn-primary btn-lg" id="google-btn" href="/auth/google?next=/signup">Continue with Google</a>
+        {% else %}
+        <p class="error">Google sign-in isn't configured on this server.</p>
+        {% endif %}
+      </li>
+      <li id="step-workspace" class="disabled">
+        <h2>2. Name your workspace</h2>
+        <form id="signup-form" class="stack" autocomplete="off" novalidate>
+          <label class="field"><span>Company or team</span>
+            <input class="input" id="ws-name" maxlength="80" placeholder="American Eagle" required disabled />
+          </label>
+          <label class="field"><span>Subdomain</span>
+            <div class="slug-input">
+              <input class="input" id="ws-slug" maxlength="31" placeholder="ae" pattern="[a-z][a-z0-9-]{1,30}" required disabled spellcheck="false" />
+              <span class="suffix">.{{ root_domain }}</span>
+            </div>
+            <span class="hint" id="slug-hint" aria-live="polite">Lowercase letters, numbers, and hyphens.</span>
+          </label>
+          <button class="btn btn-primary btn-lg" type="submit" id="create-btn" disabled>Create workspace</button>
+          <p class="error" id="signup-error" role="alert"></p>
+        </form>
+      </li>
+    </ol>
+    <p class="fine">By creating a workspace you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>
+  </section>
+</main>
+{% endblock %}

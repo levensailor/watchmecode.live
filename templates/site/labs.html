@@ -1,0 +1,54 @@
+{% extends "site/base.html" %}
+{% block title %}Labs · {{ app_name }}{% endblock %}
+{% block description %}Hands-on interview labs: SQL with seeded tables, React with live preview, a system design whiteboard, and isolated sandbox runners.{% endblock %}
+{% block content %}
+<main>
+  <section class="site-wrap page-head">
+    <span class="eyebrow">Labs</span>
+    <h1>Test the work, not the whiteboard trivia.</h1>
+    <p class="lede">Labs open in the same shared IDE as a live interview, so candidates and interviewers already know their way around. Pick a lab as the session language and go.</p>
+  </section>
+
+  <section class="site-wrap lab-grid">
+    {% for lab in labs %}
+    <article class="card lab-card">
+      <div class="row"><h3 class="grow">{{ lab.name }}</h3><span class="chip {% if lab.status == 'Shipped' %}chip-ok{% elif lab.status == 'Enterprise' %}chip-accent{% else %}chip-muted{% endif %}">{{ lab.status }}</span></div>
+      <p>{{ lab.body }}</p>
+      {% if lab.language %}<code class="muted">language: {{ lab.language }}</code>{% endif %}
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="site-wrap feature-group">
+    <article class="feature-row">
+      <div class="feature-copy">
+        <h3>SQL lab</h3>
+        <p>Drop CSV files into the session and they become tables. The candidate writes <code>.sql</code> files, presses Run, and gets formatted result tables, with the full schema printed on every run.</p>
+        <ul class="ticks"><li>Seed data per assessment</li><li>Works for analyst, data, and backend roles</li><li>Results in the playback, like any other run</li></ul>
+      </div>
+      <figure class="shot"><img src="/static/marketing/sql-lab.webp" alt="SQL lab with a query and a results table" loading="lazy" /></figure>
+    </article>
+    <article class="feature-row flip">
+      <div class="feature-copy">
+        <h3>React lab</h3>
+        <p>Components render in the sandboxed preview as you type, with React loaded from a CDN and htm templates instead of a build step.</p>
+        <ul class="ticks"><li>Live refresh on every edit</li><li>Console output from the preview</li><li>Swap in any npm package by URL</li></ul>
+      </div>
+      <figure class="shot"><img src="/static/marketing/react-lab.webp" alt="React lab with a counter component and live preview" loading="lazy" /></figure>
+    </article>
+    <article class="feature-row">
+      <div class="feature-copy">
+        <h3>System design whiteboard</h3>
+        <p>A shared Excalidraw board, saved with the session as a file. Draw the architecture together, then review it in the portal.</p>
+        <ul class="ticks"><li>Hand-drawn style that keeps it informal</li><li>Saved and synced like code</li><li>Pairs with a notes file for trade-offs</li></ul>
+      </div>
+      <figure class="shot"><img src="/static/marketing/whiteboard.webp" alt="Excalidraw whiteboard with a system diagram" loading="lazy" /></figure>
+    </article>
+  </section>
+
+  <section class="site-wrap card note-card">
+    <h2>Sandbox labs cost 2 credits</h2>
+    <p>Labs that run in a full microVM (the sandbox runner, and project and API labs) use 2 interview credits because they reserve dedicated compute. Browser labs (SQL, React, whiteboard) cost the same 1 credit as any interview.</p>
+  </section>
+</main>
+{% endblock %}
