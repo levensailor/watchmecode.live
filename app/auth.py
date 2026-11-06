@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 SESSION_USER_KEY = "user"
 HANDOFF_KEY = "handoff"
+AFTER_LOGIN_KEY = "after_login"
 TOKEN_SALT = "participant-token"
 JOIN_LINK_SALT = "join-link"
 
@@ -175,6 +176,7 @@ async def google_login(request: Request, tenant: str | None = None, next: str | 
         request.session[HANDOFF_KEY] = {"tenant": tenant, "next": safe_next(next)}
     else:
         request.session.pop(HANDOFF_KEY, None)
+        request.session[AFTER_LOGIN_KEY] = safe_next(next) if next else None
     oauth: OAuth = request.app.state.oauth
     return await oauth.google.authorize_redirect(request, _redirect_uri(request, settings))
 
@@ -211,12 +213,13 @@ async def google_callback(request: Request):
     request.session[SESSION_USER_KEY] = user
     logger.info("Interviewer signed in: %s", info.get("email"))
     pending = request.session.pop(HANDOFF_KEY, None)
+    after = request.session.pop(AFTER_LOGIN_KEY, None)
     registry = request.app.state.tenants
     if registry.enabled:
         if isinstance(pending, dict) and pending.get("tenant"):
             return await run_in_threadpool(handoff_redirect, request, user, pending["tenant"], pending.get("next") or "/")
-        return RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
-    return RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(after or "/login", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(after or "/", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/auth/handoff", summary="Finish sign-in on a workspace with a token from the auth hub")

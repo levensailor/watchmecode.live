@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app import auth, orgs, platform_api, public_api, routes
+from app import auth, orgs, platform_api, public_api, routes, site
 from app.config import PROJECT_ROOT, Settings, get_settings
 from app.crypto import Vault
 from app.integrations import ashby, modernloop
@@ -95,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ashby.partner_router)
     app.include_router(modernloop.router)
     app.include_router(platform_api.router)
+    app.include_router(site.router)
 
     @app.get("/api/health", tags=["meta"])
     def health() -> dict[str, str]:
@@ -116,7 +117,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return FileResponse(STATIC_DIR / "favicon.svg", media_type="image/svg+xml")
 
         @app.get("/", include_in_schema=False, response_class=HTMLResponse)
-        def index() -> HTMLResponse:
+        def index(request: Request) -> HTMLResponse:
+            if registry.enabled and current_site.get() == "apex":
+                return site.render(request, "home")
             return HTMLResponse(render_page(settings), headers={"Cache-Control": "no-cache"})
 
         @app.get("/privacy", include_in_schema=False, response_class=HTMLResponse)

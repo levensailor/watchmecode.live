@@ -2221,6 +2221,12 @@ async function init() {
     history.replaceState(null, "", location.pathname + location.hash);
   }
 
+  const pin = params.get("pin");
+  if (pin && /^\d{6}$/.test(pin)) {
+    $("pin-input").value = pin;
+    history.replaceState(null, "", location.pathname + location.hash);
+  }
+
   const [info, languages] = await Promise.all([api("/api/info"), api("/api/languages")]);
   app.info = info;
   app.languages = languages;
