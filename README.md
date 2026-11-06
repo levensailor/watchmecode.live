@@ -1,14 +1,14 @@
 # watchmecode.live
 
-**Share a 6-digit PIN, open one editor, and run real code together. A live interview IDE that boots in one click.**
+**Coding interviews that feel like pairing. Share a PIN, code together in a real IDE, replay every keystroke, and give every customer their own subdomain.**
 
 ```text
-Interviewer → Generate PIN for "Ada Lovelace"  →  482913
-Candidate   → https://watchmecode.live → 482913 → Join
-Both        → edit main.py · ▶ Run · see each other's changes in ~1s
+Company     → watchmecode.live/signup → "American Eagle" → ae.watchmecode.live (14-day trial)
+Interviewer → ae.watchmecode.live → Generate PIN for "Ada Lovelace" → 482913
+Candidate   → ae.watchmecode.live → 482913 → Join · edit main.py · ▶ Run · changes sync in ~1s
 ```
 
-![Landing page](docs/assets/landing.png)
+![The shared IDE](static/marketing/ide-dark.webp)
 
 **Live:** [watchmecode.live](https://watchmecode.live) · **API:** [watchmecode.live/docs](https://watchmecode.live/docs) · **Docs:** [`docs/`](docs/index.md), published to Read the Docs at `watchmecode-live.readthedocs.io` once the project is imported (see [Deployment](docs/deployment.md#read-the-docs))
 
@@ -28,16 +28,29 @@ Both        → edit main.py · ▶ Run · see each other's changes in ~1s
 | ModernLoop | Polls ModernLoop every 10 minutes and creates sessions for newly scheduled interviews. |
 | Take-homes | Timed, solo assessments with a Submit button, started from Ashby's interview plan. |
 | Public API | `POST /v1/pads` returns a candidate join link, so any scheduler or ATS can create interviews. |
-| Google sign-in | OpenID Connect with PKCE. Name and avatar sit top right with a Log out dropdown. |
+| Labs | SQL (CSV files become tables), React with live preview and no build step, and a shared Excalidraw whiteboard. |
+| Sandbox runner | `SANDBOX_BACKEND=sandbox` runs all ten languages in a per-session Vercel Sandbox microVM. |
+| Workspaces | Each customer gets `<slug>.watchmecode.live` with its own Postgres schema, members, and sign-in domains. Enterprise gets a dedicated instance. |
+| Plans and billing | 14-day trial, Starter, Team, and Enterprise; Stripe Checkout, Customer Portal, and metered interview credits. |
+| Product site | Home, features, labs, integrations, pricing, customers, security, signup, and a workspace picker on the apex. |
+| Google sign-in | OpenID Connect with PKCE at one hub; workspaces get signed Ed25519 handoffs. Name and avatar sit top right with a Log out dropdown. |
 | Light and dark | Bento Box design, custom favicon, works on phones. |
 
 ![IDE](docs/assets/ide.png)
 
 ## How to log in
 
-**Interviewers** click **Interviewer sign in with Google** on [watchmecode.live](https://watchmecode.live). Any Google account works. You land on the candidate portal: type the candidate's name, pick a starter language, and press **Generate PIN**.
+**Today (single workspace):** interviewers click **Interviewer sign in with Google** on [watchmecode.live](https://watchmecode.live). Any Google account works. You land on the candidate portal: type the candidate's name, pick a starter language, and press **Generate PIN**.
 
-**Candidates** need no account. Open [watchmecode.live](https://watchmecode.live), type the PIN from your interviewer into **Join an interview**, and press **Join**, or just open the invite link (`/j/…`) from the interview email. The PIN stops working once the interviewer ends the session.
+**With workspaces on** (`ROOT_DOMAIN=watchmecode.live`):
+
+| Who | Where | How |
+| --- | --- | --- |
+| New customer | [watchmecode.live/signup](https://watchmecode.live/signup) | Continue with Google, name the workspace, pick a subdomain. You're the owner, on a 14-day trial. |
+| Interviewer | `https://<slug>.watchmecode.live` or [watchmecode.live/login](https://watchmecode.live/login) | Sign in with Google once at the hub; it hands you to every workspace you belong to. Admins add members or whole Google domains under **Workspace & billing**. |
+| Existing users | [app.watchmecode.live](https://app.watchmecode.live) | Everything created before workspaces lives in the `app` workspace, open to any Google account. Old `watchmecode.live/#/s/…` and `/j/…` links redirect there. |
+
+**Candidates** need no account. Open the invite link (`/j/…`) from the interview email, or open the workspace URL and type the PIN into **Join an interview**. The PIN stops working once the interviewer ends the session.
 
 ## Integrations
 
@@ -90,6 +103,12 @@ All settings come from `.env` locally and from Vercel environment variables in p
 | `ASHBY_PARTNER_ID` | `partnerId` for `assessment.addCompletedToCandidate` (default `watchmecode`) |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Optional: email take-home invites to candidates |
 | `JOIN_LINK_MAX_AGE` | Seconds candidate invite links stay valid (default 30 days) |
+| `ROOT_DOMAIN` | Turns on workspaces: the apex serves the product site, `<slug>.ROOT_DOMAIN` serves each workspace. Empty keeps one workspace |
+| `PLATFORM_SCHEMA`, `TRIAL_DAYS` | Postgres schema for tenants, memberships, and usage (default `platform`); trial length (default 14) |
+| `HANDOFF_PRIVATE_KEY` | Ed25519 key the sign-in hub signs workspace handoffs with (derived from `SESSION_SECRET` if empty) |
+| `TENANT_MODE=dedicated`, `TENANT_SLUG`, `AUTH_HUB_URL`, `HANDOFF_PUBLIC_KEY` | Dedicated Enterprise instances (set by `scripts/provision_dedicated.py`) |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICES` | Billing; `scripts/stripe_setup.py --apply` creates prices, the meter, and the webhook |
+| `SANDBOX_BACKEND`, `SANDBOX_SESSION_MINUTES` | `sandbox` runs code in Vercel Sandbox microVMs (default `local`) |
 | `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | Only for non-interactive CLI deploys |
 
 Google's authorized redirect URIs must include both:
@@ -114,18 +133,29 @@ Repeat `vercel env add` for each Google variable. The function runs in `iad1` wi
 
 **Database.** Production uses the Supabase Postgres resource `supabase-orange-park` from the Vercel Marketplace, connected to this project so `POSTGRES_URL` is injected. All tables live in the `watchmecode` schema with row-level security on, so they never collide with the other apps sharing that database. The schema is created on startup from [`sql/schema_postgres.sql`](sql/schema_postgres.sql). The SQLite version is [`sql/schema.sql`](sql/schema.sql).
 
+### Turning on workspaces
+
+Production runs as one workspace until `ROOT_DOMAIN` is set. To switch:
+
+1. `vercel domains add '*.watchmecode.live'` (the domain is on Vercel DNS, so the wildcard certificate is automatic).
+2. Set `ROOT_DOMAIN=watchmecode.live`, `PUBLIC_URL=https://watchmecode.live`, and `HANDOFF_PRIVATE_KEY` in Vercel, then push.
+3. Keep `https://watchmecode.live/auth/google/callback` as the Google redirect URI. Sign-in always happens at the apex.
+4. Optional: `uv run python scripts/stripe_setup.py --apply` and add the three `STRIPE_*` variables.
+
+The existing `watchmecode` schema becomes the `app` workspace automatically, and new workspaces get `t_<slug>` schemas on signup. See [docs/deployment.md](docs/deployment.md#workspaces).
+
 ### Runtimes on Vercel
 
-The Vercel Python runtime has Python and bash, and nothing else. Every other language returns a clear "not installed on this server" message there. Run the app on a machine with the toolchains to use all ten.
+The Vercel Python runtime has Python and bash, and nothing else. With `SANDBOX_BACKEND=sandbox`, every language runs in a Vercel Sandbox microVM instead. Toolchains install on first use per session, and authentication uses the deployment's OIDC token.
 
-| Language | Vercel | Self-hosted (toolchain on PATH) |
+| Language | Vercel (local runner) | Vercel with `SANDBOX_BACKEND=sandbox` |
 | --- | --- | --- |
-| Python | Runs. Imports auto-install with pip | Runs. Imports auto-install with `uv run --with` |
+| Python | Runs; imports auto-install with pip | Runs; imports auto-install with pip |
 | Shell | Runs | Runs |
-| JavaScript | Not available | Node, `npm install` for imports, `nvm use` when nvm exists |
-| TypeScript | Not available | Node + `tsx` (installed on first run) |
-| Java, C, C++, Go, PHP, C# | Not available | `javac`/`java`, `gcc`, `g++`, `go mod tidy && go run .`, `php`, `dotnet run` or Mono |
-| HTML/CSS/JS | Renders in the browser preview | Renders in the browser preview |
+| JavaScript, TypeScript | Not available | Node 24, `npm install` for imports, `tsx` |
+| Java, C, C++, Go, PHP, C# | Not available | Installed on first run: JDK, gcc, g++, Go, PHP, .NET 10 |
+| SQL lab | Runs (SQLite) | Runs (SQLite) |
+| HTML/CSS/JS, React lab, whiteboard | In the browser | In the browser |
 
 ## Architecture
 
@@ -158,7 +188,13 @@ Both browsers poll `GET /api/sessions/{id}/changes?since=` every second. Vercel 
 | `api/index.py` | Vercel entrypoint exporting `app` |
 | `app/` | Config, logging, auth, repository, schemas, routes, runner, language templates, orgs, public API, results |
 | `app/integrations/` | Ashby (webhooks, partner API, write-back), ModernLoop poller, email, HTTP clients |
-| `static/` | Single-page UI, CSS, favicon, vendored CodeMirror bundle |
+| `app/tenancy.py`, `app/platform.py` | Host-based workspace routing, schema-per-workspace repositories, and the platform store |
+| `app/handoff.py`, `app/platform_api.py` | Sign-in hub handoff tokens; signup, workspace settings, and the Stripe webhook |
+| `app/plans.py`, `app/billing.py` | Plan entitlements, credit metering, and Stripe |
+| `app/site.py`, `templates/site/` | Product site (Jinja2) |
+| `app/labs/`, `app/sandbox_runner.py` | SQL lab runner and the Vercel Sandbox runner |
+| `scripts/` | `migrate.py`, `stripe_setup.py`, `provision_dedicated.py`, `seed_demo.py` |
+| `static/` | Single-page UI, product site CSS/JS, whiteboard, screenshots, favicon, vendored CodeMirror bundle |
 | `frontend/` | Builds `static/vendor/codemirror.js` (`cd frontend && npm install && npm run build`) |
 | `sql/` | SQLite and Postgres schemas |
 | `tests/` | pytest suite |

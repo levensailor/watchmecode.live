@@ -28,6 +28,30 @@ flowchart LR
 | HTTP routes | `app/routes.py` |
 | Runner and language support | `app/runner.py`, `app/languages.py` |
 | UI | `static/index.html`, `static/app.js`, `static/app.css` |
+| Workspace routing and per-workspace repositories | `app/tenancy.py`, `app/platform.py`, `sql/platform*.sql` |
+| Sign-in hub handoff (Ed25519) | `app/handoff.py`, `app/auth.py` |
+| Plans, metering, Stripe | `app/plans.py`, `app/billing.py`, `app/platform_api.py` |
+| Product site | `app/site.py`, `templates/site/`, `static/site.css`, `static/site.js` |
+| Labs and sandbox runner | `app/labs/sql_lab.py`, `app/sandbox_runner.py`, `static/whiteboard.html` |
+
+## Workspaces
+
+Every request passes through `TenantMiddleware`, which maps the `Host` header to a tenant and sets two context variables: the tenant, and its `Repository`. `app.state.repo` is a proxy that resolves to the current request's repository, so routes, integrations, and background tasks need no tenant plumbing. Shared workspaces store data in Postgres schema `t_<slug>` (a SQLite file per workspace locally). The pre-workspace data stays in `watchmecode` as the `app` workspace.
+
+```mermaid
+sequenceDiagram
+  participant B as Browser on ae.watchmecode.live
+  participant H as watchmecode.live (hub)
+  participant G as Google
+  B->>H: /auth/google?tenant=ae&next=/
+  H->>G: OIDC + PKCE
+  G->>H: callback (email, name)
+  H->>H: member of ae, or email domain allowed?
+  H->>B: 303 ae…/auth/handoff?token (Ed25519, 2 min, single use, audience-bound)
+  B->>B: session cookie bound to tenant "ae"
+```
+
+Session cookies are host-only and also record the workspace they were issued for, so a cookie copied to another subdomain is refused. Memberships and plans live in the `platform` schema; plan checks (`require_feature`, `require_active`) return 402 with an upgrade message.
 
 ## Interviewer flow
 

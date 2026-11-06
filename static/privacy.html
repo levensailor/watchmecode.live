@@ -34,6 +34,7 @@
           <li><strong>Organizations:</strong> organization names and member email addresses with their roles, plus API keys (we store only a hash).</li>
           <li><strong>Applicant tracking and scheduling data:</strong> if an organization connects Ashby or ModernLoop, we receive the candidate's name, email address, and ATS identifiers; the job and interview stage; interview times; and interviewer names and email addresses. We use this only to create sessions and send results back to that organization's account.</li>
           <li><strong>Integration credentials:</strong> Ashby API keys, ModernLoop API tokens, and webhook secrets that organization admins provide. They're encrypted at rest.</li>
+          <li><strong>Workspaces and billing:</strong> the workspace name and subdomain, the owner's and members' email addresses and roles, allowed sign-in domains, the plan, and a count of interview credits used. Payment details are collected and stored by Stripe; we keep only Stripe's customer and subscription IDs.</li>
           <li><strong>Technical data:</strong> request logs (method, path, status, and timing). Our hosting provider may also keep standard access logs, including IP addresses.</li>
         </ul>
 
@@ -50,11 +51,12 @@
         <p>We use one signed session cookie to keep interviewers signed in. Your browser's local storage holds your theme preference, the Live refresh setting, and a candidate's session access token. We don't use tracking or advertising cookies.</p>
 
         <h2>Where data is stored</h2>
-        <p>The app runs on Vercel in the United States (us-east). Data is stored in a Supabase Postgres database. Code runs in temporary server workspaces that are discarded when the server instance is recycled.</p>
+        <p>The app runs on Vercel in the United States (us-east). Data is stored in a Supabase Postgres database, with each workspace in its own schema; Enterprise workspaces can run on a dedicated deployment and database. Code runs in temporary server workspaces, or in isolated Vercel Sandbox virtual machines that are stopped when the session ends.</p>
 
         <h2>Service providers</h2>
         <ul>
-          <li><strong>Vercel</strong>: hosting and logs.</li>
+          <li><strong>Vercel</strong>: hosting, logs, and code sandboxes.</li>
+          <li><strong>Stripe</strong>: subscriptions, payments, and invoices.</li>
           <li><strong>Supabase</strong>: database.</li>
           <li><strong>Google</strong>: interviewer sign-in.</li>
           <li><strong>Resend</strong>: candidate assessment emails, when enabled.</li>

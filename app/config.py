@@ -40,7 +40,7 @@ class Settings:
     app_author: str = "levensailor"
     public_url: str = ""
     contact_url: str = "https://github.com/levensailor/watchmecode.live/issues"
-    legal_updated: str = "November 3, 2026"
+    legal_updated: str = "November 6, 2026"
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = ""

@@ -52,6 +52,51 @@ The Supabase resource `supabase-orange-park` from the Vercel Marketplace is conn
 
 Self-host on a machine with the toolchains on `PATH` to run all ten. With uv installed, Python uses `uv run --with`. JavaScript uses `npm install`, plus `nvm use` when nvm is present.
 
+## Workspaces
+
+With `ROOT_DOMAIN` set, one deployment serves the product site at the apex and every shared workspace at `<slug>.ROOT_DOMAIN`.
+
+```mermaid
+flowchart LR
+  apex["watchmecode.live: product site, signup, sign-in hub, Stripe webhook"]
+  ws["ae.watchmecode.live: workspace app"]
+  mw[TenantMiddleware: Host → tenant]
+  plat[("platform schema: tenants, memberships, usage_events, stripe_events")]
+  t1[("t_ae schema")]
+  legacy[("watchmecode schema = app workspace")]
+  apex --> mw
+  ws --> mw
+  mw --> plat
+  mw --> t1
+  mw --> legacy
+```
+
+| Step | Command or setting |
+| --- | --- |
+| Wildcard domain | `vercel domains add '*.watchmecode.live'` |
+| Turn it on | `ROOT_DOMAIN=watchmecode.live`, `PUBLIC_URL=https://watchmecode.live` |
+| Signing key | `HANDOFF_PRIVATE_KEY` (base64 32-byte seed). Without it the key is derived from `SESSION_SECRET` |
+| Google | Keep only the apex callback `https://watchmecode.live/auth/google/callback`; workspaces sign in through the hub |
+| Schema | Created on startup from `sql/platform_postgres.sql`; `uv run python scripts/migrate.py` migrates every workspace up front |
+
+Requests on the apex that carry a workspace-scoped API key (`wmc_<slug>.…`) are routed to that workspace, so integrations can keep calling `https://watchmecode.live/v1/…`. Unknown subdomains get a 404 page with a link to claim the name.
+
+### Billing
+
+1. Put `STRIPE_SECRET_KEY` (test mode first) in `.env`.
+2. `uv run python scripts/stripe_setup.py` shows the plan; `--apply` creates the Starter and Team products, monthly and annual prices, graduated overage prices tied to the `interview_credits` meter, and a webhook endpoint at `/api/stripe/webhook`. It writes `STRIPE_PRICES` and `STRIPE_WEBHOOK_SECRET` to `.env`.
+3. Copy the three `STRIPE_*` values to Vercel production.
+
+Trials stop at 15 credits. Paid plans keep working past their allowance, and every credit is reported to the meter so Stripe bills only usage beyond the free tier.
+
+### Sandbox runner
+
+Set `SANDBOX_BACKEND=sandbox` to run code in Vercel Sandbox microVMs (`vercel` Python SDK). On Vercel the SDK authenticates with the deployment's OIDC token automatically. Locally, `vercel env pull` provides `VERCEL_OIDC_TOKEN`. If the sandbox is unreachable, runs fall back to the local runner with a note in the console.
+
+### Dedicated instances
+
+See the [dedicated instance runbook](runbooks/dedicated.md).
+
 ## Read the Docs
 
 `.readthedocs.yaml` builds this MkDocs site. To publish, import `levensailor/watchmecode.live` at [readthedocs.org/dashboard/import](https://readthedocs.org/dashboard/import/). Builds then run on every push.
