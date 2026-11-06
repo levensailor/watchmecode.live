@@ -11,7 +11,7 @@ const LIVE_DEBOUNCE_MS = 1200;
 const KEEP_FILE = ".keep";
 const NOTE_LINE = /^\[(Installing|HTML|uv|pip|npm)[^\]]*\]$/;
 const CLIENT_ID = crypto.randomUUID();
-const STORAGE = { theme: "wmc:theme", live: "wmc:live", token: (id) => `wmc:token:${id}` };
+const STORAGE = { theme: "wmc:theme", live: "wmc:live", org: "wmc:org", token: (id) => `wmc:token:${id}` };
 
 const $ = (id) => document.getElementById(id);
 
@@ -160,7 +160,32 @@ const app = {
   info: null,
   languages: [],
   sessions: [],
+  orgs: [],
 };
+
+async function loadOrgs() {
+  if (!app.me) {
+    app.orgs = [];
+  } else {
+    try {
+      app.orgs = await api("/api/orgs");
+    } catch {
+      app.orgs = [];
+    }
+  }
+  renderOrgSelect();
+}
+
+function renderOrgSelect() {
+  const select = $("org-select");
+  $("org-field").hidden = !app.orgs.length;
+  const saved = localStorage.getItem(STORAGE.org) ?? "";
+  select.replaceChildren(
+    h("option", { value: "" }, "Personal"),
+    ...app.orgs.map((org) => h("option", { value: org.id }, org.name)),
+  );
+  select.value = app.orgs.some((org) => org.id === saved) ? saved : "";
+}
 
 function languageLabel(id) {
   return app.languages.find((l) => l.id === id)?.label ?? id;
@@ -193,6 +218,7 @@ async function loadIdentity() {
     app.me = null;
   }
   renderUser();
+  await loadOrgs();
 }
 
 /* Landing + portal ---------------------------------------------------------------------- */
@@ -303,7 +329,11 @@ function renderPortal(filter) {
         ...group.sessions.map((s) =>
           h("div", { class: "session-row" },
             h("div", { class: "session-info" },
-              h("strong", {}, languageLabel(s.language)),
+              h("div", { class: "row" },
+                h("strong", {}, languageLabel(s.language)),
+                s.mode === "take_home" ? h("span", { class: "chip mode" }, "Take-home") : null,
+              ),
+              s.title ? h("div", { class: "title", title: s.title }, s.title) : null,
               h("div", { class: "meta" }, `Created ${formatDate(s.created_at)}`),
             ),
             h("div", { class: "session-actions" },
@@ -371,9 +401,11 @@ function setupHome() {
     $("create-btn").disabled = true;
     $("create-error").textContent = "";
     try {
+      const org_id = $("org-select").value || null;
+      localStorage.setItem(STORAGE.org, org_id ?? "");
       const session = await api("/api/sessions", {
         method: "POST",
-        body: { candidate_name, language: $("language-select").value },
+        body: { candidate_name, language: $("language-select").value, org_id },
       });
       $("pin-result").hidden = false;
       $("pin-result-name").textContent = session.candidate_name;
@@ -567,6 +599,12 @@ const ide = {
     this.lastRun = null;
     this.recording = null;
     clearInterval(this.recTimer);
+    clearInterval(this.countdownTimer);
+    this.locked = false;
+    $("run-btn").disabled = false;
+    $("ide-mode").hidden = true;
+    $("ide-countdown").hidden = true;
+    $("submit-btn").hidden = true;
     $("menubar").hidden = true;
     $("session-chip").hidden = true;
     $("ide-status").hidden = true;
@@ -589,6 +627,74 @@ const ide = {
       ].filter(Boolean),
     );
     document.title = `${session.candidate_name} · ${app.info?.app_name ?? ""}`;
+    this.renderTakeHome();
+  },
+
+  renderTakeHome() {
+    const session = this.state?.session;
+    const takeHome = session?.mode === "take_home";
+    const active = session?.status === "active";
+    $("ide-mode").hidden = !takeHome;
+    $("ide-mode").textContent = session?.submitted_at ? "Take-home · submitted" : "Take-home";
+    $("ide-mode").className = "chip mode";
+    $("submit-btn").hidden = !(takeHome && active && this.state.role === "candidate");
+    clearInterval(this.countdownTimer);
+    const showCountdown = takeHome && active && session.started_at && session.time_limit_minutes;
+    $("ide-countdown").hidden = !showCountdown;
+    if (!showCountdown) return;
+    const deadline = Date.parse(session.started_at) + session.time_limit_minutes * 60_000;
+    const tick = () => {
+      const left = deadline - Date.now();
+      $("ide-countdown").textContent = `${formatClock(left)} left`;
+      $("ide-countdown").classList.toggle("low", left < 5 * 60_000);
+      if (left <= 0) {
+        clearInterval(this.countdownTimer);
+        if (this.state?.role === "candidate") this.submitTakeHome(true);
+      }
+    };
+    tick();
+    this.countdownTimer = setInterval(tick, 1000);
+  },
+
+  async submitTakeHome(timeUp = false) {
+    if (!timeUp) {
+      const ok = await promptDialog({
+        title: "Submit your assessment?",
+        message: "Your files are saved and sent to the hiring team. You can't edit after submitting.",
+        okLabel: "Submit",
+        input: false,
+      });
+      if (!ok) return;
+    }
+    $("submit-btn").disabled = true;
+    try {
+      await this.flushAll();
+      const session = await api(`/api/sessions/${this.sessionId}/submit`, { method: "POST", sessionId: this.sessionId });
+      this.state.session = { ...this.state.session, ...session };
+      this.finishLocally(timeUp ? "Time is up. Your work was submitted." : "Submitted. Thanks! You can close this tab.");
+    } catch (err) {
+      if (err.status === 403) this.finishLocally(err.message);
+      else toast(err.message);
+    } finally {
+      $("submit-btn").disabled = false;
+    }
+  },
+
+  finishLocally(message) {
+    if (this.locked) return;
+    this.locked = true;
+    clearTimeout(this.pollTimer);
+    clearTimeout(this.liveTimer);
+    clearInterval(this.countdownTimer);
+    for (const pending of this.dirty.values()) clearTimeout(pending);
+    this.dirty.clear();
+    if (this.state) this.state.session.status = "ended";
+    $("submit-btn").hidden = true;
+    $("ide-countdown").hidden = true;
+    $("ide-status").hidden = false;
+    $("run-btn").disabled = true;
+    this.setSync("offline", "Submitted");
+    infoDialog("Assessment submitted", h("p", {}, message));
   },
 
   visiblePaths() {
@@ -740,6 +846,7 @@ const ide = {
 
   onLocalEdit(path, content) {
     this.files.set(path, content);
+    if (this.locked) return;
     clearTimeout(this.dirty.get(path));
     this.dirty.set(path, setTimeout(() => this.save(path), SAVE_DEBOUNCE_MS));
     this.setSync("saving", "Saving…");
@@ -807,7 +914,8 @@ const ide = {
       this.setSync("offline", err.status === 403 ? "Session ended" : "Access lost");
       if (err.status === 403) {
         $("ide-status").hidden = false;
-        toast("The interviewer ended this session.");
+        if (this.state?.session.mode === "take_home") this.finishLocally(err.message);
+        else toast("The interviewer ended this session.");
       }
       clearTimeout(this.pollTimer);
       this.sessionId && this.state?.role === "candidate" && err.status !== 403 && (location.hash = "#/");
@@ -1168,6 +1276,7 @@ const ide = {
 function setupIde() {
   $("run-btn").addEventListener("click", () => ide.run());
   $("record-btn").addEventListener("click", () => ide.toggleRecording());
+  $("submit-btn").addEventListener("click", () => ide.submitTakeHome());
   $("recordings-btn").addEventListener("click", () => showRecordings(ide.sessionId, ide.state?.session.candidate_name));
   $("live-toggle").addEventListener("change", () => {
     localStorage.setItem(STORAGE.live, $("live-toggle").checked ? "1" : "0");
@@ -1488,10 +1597,400 @@ function setupPlayer() {
   });
 }
 
+/* Organization settings ------------------------------------------------------------------ */
+
+function fieldEl(label, input, hint) {
+  const id = input.id || `f-${Math.random().toString(36).slice(2, 9)}`;
+  input.id = id;
+  return h("div", { class: "field" }, h("label", { for: id }, label), input, hint ? h("span", { class: "help" }, hint) : null);
+}
+
+function toggleEl(label, checked, onChange) {
+  const input = h("input", { type: "checkbox" });
+  input.checked = Boolean(checked);
+  if (onChange) input.addEventListener("change", onChange);
+  return { el: h("label", { class: "switch" }, input, label), input };
+}
+
+function copyField(value, label = "Copy") {
+  return h("div", { class: "copy-field" },
+    h("code", { title: value }, value),
+    h("button", { class: "btn btn-sm", type: "button", onclick: async () => { await navigator.clipboard.writeText(value); toast("Copied"); } }, label),
+  );
+}
+
+function languageSelect(value) {
+  const select = h("select", { class: "input" }, ...app.languages.map((l) => h("option", { value: l.id }, l.label)));
+  select.value = value || "python";
+  return select;
+}
+
+function splitIds(text) {
+  return text.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+}
+
+const orgView = {
+  orgId: null,
+  detail: null,
+  templates: [],
+  editing: null,
+
+  async open(orgId) {
+    $("view-home").hidden = true;
+    $("view-ide").hidden = true;
+    $("view-player").hidden = true;
+    $("view-org").hidden = false;
+    document.title = `Organization settings · ${app.info?.app_name ?? ""}`;
+    renderUser();
+    if (!app.me) {
+      $("view-org").replaceChildren(
+        h("section", { class: "tile span-6 static" }, h("h2", {}, "Sign in required"), h("p", { class: "help" }, "Sign in with Google to manage organizations."),
+          app.info?.google_enabled ? h("a", { class: "btn btn-primary", href: "/auth/google" }, "Interviewer sign in") : null),
+      );
+      return;
+    }
+    await loadOrgs();
+    const saved = localStorage.getItem(STORAGE.org);
+    this.orgId = orgId || (app.orgs.some((o) => o.id === saved) ? saved : app.orgs[0]?.id) || null;
+    this.editing = null;
+    await this.refresh();
+  },
+
+  async refresh() {
+    this.detail = null;
+    this.templates = [];
+    if (this.orgId) {
+      try {
+        [this.detail, this.templates] = await Promise.all([
+          api(`/api/orgs/${this.orgId}`),
+          api(`/api/orgs/${this.orgId}/assessments`),
+        ]);
+        localStorage.setItem(STORAGE.org, this.orgId);
+      } catch (err) {
+        toast(err.message);
+        this.orgId = null;
+      }
+    }
+    this.render();
+  },
+
+  isAdmin() {
+    return this.detail?.role === "admin";
+  },
+
+  async call(path, options, success) {
+    try {
+      const result = await api(path, options);
+      if (success) toast(success);
+      return result ?? true;
+    } catch (err) {
+      toast(err.message);
+      return null;
+    }
+  },
+
+  render() {
+    const tiles = [this.headerTile()];
+    if (this.detail) {
+      tiles.push(this.membersTile(), this.apiKeysTile(), this.ashbyTile(), this.modernLoopTile(), this.templatesTile());
+    }
+    $("view-org").replaceChildren(...tiles.filter(Boolean));
+    staggerTiles($("view-org"));
+  },
+
+  headerTile() {
+    const nameInput = h("input", { class: "input", maxlength: "80", placeholder: "e.g. Acme Engineering", required: true });
+    const createForm = h("form", { class: "inline-form", onsubmit: async (e) => {
+      e.preventDefault();
+      const org = await this.call("/api/orgs", { method: "POST", body: { name: nameInput.value.trim() } }, "Organization created");
+      if (org) { this.orgId = org.id; await loadOrgs(); location.hash = `#/org/${org.id}`; await this.refresh(); }
+    } }, fieldEl("New organization", nameInput), h("button", { class: "btn btn-primary", type: "submit" }, "Create"));
+
+    const switcher = app.orgs.length
+      ? (() => {
+          const select = h("select", { class: "input" }, ...app.orgs.map((o) => h("option", { value: o.id }, `${o.name} (${o.role})`)));
+          select.value = this.orgId ?? "";
+          select.addEventListener("change", () => { location.hash = `#/org/${select.value}`; });
+          return fieldEl("Organization", select);
+        })()
+      : null;
+
+    return h("section", { class: "tile span-6 static" },
+      h("div", { class: "tile-head" },
+        h("div", { class: "grow" }, h("h2", {}, "Organization settings"),
+          h("span", { class: "caption" }, "Share sessions with your team and connect Ashby or ModernLoop.")),
+        h("a", { class: "btn btn-sm", href: "#/" }, "← Portal"),
+      ),
+      this.detail ? h("div", { class: "status-line" }, h("span", { class: "chip" }, this.detail.slug), `Your role: ${this.detail.role}`) : null,
+      h("div", { class: "form-grid" }, switcher, createForm),
+      app.orgs.length ? null : h("p", { class: "help" }, "Create an organization to invite interviewers, issue API keys, and connect your ATS."),
+    );
+  },
+
+  membersTile() {
+    const admin = this.isAdmin();
+    const rows = this.detail.members.map((m) =>
+      h("div", { class: "org-row" },
+        h("span", { class: "grow", title: m.email }, m.email),
+        h("span", { class: m.role === "admin" ? "chip" : "chip ended" }, m.role),
+        admin && m.email !== app.me?.email ? h("button", { class: "btn btn-sm btn-danger", type: "button", onclick: async () => {
+          const ok = await promptDialog({ title: `Remove ${m.email}?`, message: "They lose access to this organization's sessions.", okLabel: "Remove", input: false });
+          if (ok && (await this.call(`/api/orgs/${this.orgId}/members/${encodeURIComponent(m.email)}`, { method: "DELETE" }, "Member removed")) !== null) this.refresh();
+        } }, "Remove") : null,
+      ),
+    );
+    const email = h("input", { class: "input", type: "email", placeholder: "teammate@company.com", required: true });
+    const role = h("select", { class: "input" }, h("option", { value: "interviewer" }, "Interviewer"), h("option", { value: "admin" }, "Admin"));
+    const form = admin ? h("form", { class: "inline-form", onsubmit: async (e) => {
+      e.preventDefault();
+      if (await this.call(`/api/orgs/${this.orgId}/members`, { method: "POST", body: { email: email.value.trim(), role: role.value } }, "Member added")) this.refresh();
+    } }, fieldEl("Email", email), fieldEl("Role", role), h("button", { class: "btn btn-primary", type: "submit" }, "Add")) : null;
+    return h("section", { class: "tile span-3 static" },
+      h("div", { class: "tile-head" }, h("h2", { class: "grow" }, "Members"), h("span", { class: "caption" }, `${this.detail.members.length}`)),
+      h("p", { class: "help" }, "Members can open every session in this organization. Interviewers from Ashby and ModernLoop are added automatically."),
+      h("div", { class: "org-list" }, rows),
+      form,
+    );
+  },
+
+  apiKeysTile() {
+    if (!this.isAdmin()) return null;
+    const rows = this.detail.api_keys.map((k) =>
+      h("div", { class: "org-row" },
+        h("div", { class: "grow" }, h("strong", {}, k.name), h("div", { class: "meta" }, `${k.prefix}… · created ${formatDate(k.created_at)}${k.last_used_at ? ` · used ${formatDate(k.last_used_at)}` : ""}`)),
+        h("button", { class: "btn btn-sm btn-danger", type: "button", onclick: async () => {
+          const ok = await promptDialog({ title: `Revoke ${k.name}?`, message: "Anything using this key stops working immediately.", okLabel: "Revoke", input: false });
+          if (ok && (await this.call(`/api/orgs/${this.orgId}/api-keys/${k.id}`, { method: "DELETE" }, "Key revoked")) !== null) this.refresh();
+        } }, "Revoke"),
+      ),
+    );
+    const name = h("input", { class: "input", maxlength: "80", placeholder: "e.g. Ashby assessments", required: true });
+    const form = h("form", { class: "inline-form", onsubmit: async (e) => {
+      e.preventDefault();
+      const created = await this.call(`/api/orgs/${this.orgId}/api-keys`, { method: "POST", body: { name: name.value.trim() } });
+      if (created) {
+        infoDialog("API key created", h("div", { class: "stack" }, h("p", { class: "help" }, "Copy it now. It won't be shown again."), copyField(created.key)));
+        this.refresh();
+      }
+    } }, fieldEl("Key name", name), h("button", { class: "btn btn-primary", type: "submit" }, "Create key"));
+    return h("section", { class: "tile span-3 static" },
+      h("div", { class: "tile-head" }, h("h2", { class: "grow" }, "API keys")),
+      h("p", { class: "help" }, "Used by the public API (/v1/pads) and by Ashby's Assessments integration (paste the key into Ashby)."),
+      h("div", { class: "org-list" }, rows.length ? rows : [h("div", { class: "empty" }, "No API keys yet.")]),
+      form,
+    );
+  },
+
+  integration(provider) {
+    return this.detail.integrations.find((i) => i.provider === provider) ?? { provider, connected: false, settings: {} };
+  },
+
+  statusLine(integration) {
+    return h("div", { class: "status-line" },
+      integration.connected ? h("span", { class: "chip ok" }, "Connected") : h("span", { class: "chip ended" }, "Not connected"),
+      integration.last_event_at ? `Last webhook ${formatDate(integration.last_event_at)}` : null,
+      integration.last_synced_at ? `Last sync ${formatDate(integration.last_synced_at)}` : null,
+      integration.last_error ? h("span", { class: "chip err", title: integration.last_error }, "Last error") : null,
+    );
+  },
+
+  ashbyTile() {
+    const integration = this.integration("ashby");
+    const s = integration.settings || {};
+    const admin = this.isAdmin();
+    const apiKey = h("input", { class: "input", type: "password", autocomplete: "off", placeholder: integration.connected ? "•••••• stored (leave blank to keep)" : "Ashby API key" });
+    const fieldId = h("input", { class: "input", placeholder: "Candidate custom field ID (optional)", value: s.candidate_link_field_id ?? "" });
+    const stages = h("input", { class: "input", placeholder: "Interview stage IDs, comma separated (blank = all)", value: (s.interview_stage_ids ?? []).join(", ") });
+    const language = languageSelect(s.default_language);
+    const toggles = {
+      post_link_note: toggleEl("Post the join link as a candidate note", s.post_link_note ?? true),
+      push_results_note: toggleEl("Post results and playback as a note", s.push_results_note ?? true),
+      upload_files: toggleEl("Upload the final code (zip) to the candidate", s.upload_files ?? true),
+      add_completed_assessment: toggleEl("Record live interviews as completed assessments", s.add_completed_assessment ?? false),
+    };
+    const save = async (extra = {}) => {
+      const body = {
+        settings: {
+          candidate_link_field_id: fieldId.value.trim() || null,
+          interview_stage_ids: splitIds(stages.value),
+          default_language: language.value,
+          ...Object.fromEntries(Object.entries(toggles).map(([k, t]) => [k, t.input.checked])),
+        },
+        ...extra,
+      };
+      if (apiKey.value.trim()) body.api_key = apiKey.value.trim();
+      if (await this.call(`/api/orgs/${this.orgId}/integrations/ashby`, { method: "PUT", body }, "Ashby settings saved")) this.refresh();
+    };
+    const secretBox = h("div", {});
+    const actions = admin ? h("div", { class: "row" },
+      h("button", { class: "btn btn-primary", type: "button", onclick: () => save() }, integration.connected ? "Save" : "Connect"),
+      integration.connected ? h("button", { class: "btn", type: "button", onclick: async () => {
+        const result = await this.call(`/api/orgs/${this.orgId}/integrations/ashby/test`, { method: "POST" });
+        if (result) toast(result.detail);
+        this.refresh();
+      } }, "Test") : null,
+      integration.connected ? h("button", { class: "btn btn-danger", type: "button", onclick: async () => {
+        const ok = await promptDialog({ title: "Disconnect Ashby?", message: "Webhooks will be rejected and results stop syncing.", okLabel: "Disconnect", input: false });
+        if (ok && (await this.call(`/api/orgs/${this.orgId}/integrations/ashby`, { method: "DELETE" }, "Ashby disconnected")) !== null) this.refresh();
+      } }, "Disconnect") : null,
+    ) : null;
+
+    const webhook = integration.connected && admin ? h("div", { class: "stack" },
+      h("strong", {}, "Webhook"),
+      h("p", { class: "help" }, "In Ashby: Admin → Integrations → Webhooks → New. Add interviewScheduleCreate and interviewScheduleUpdate with this URL and secret."),
+      copyField(integration.webhook_url),
+      secretBox,
+      h("div", { class: "row" },
+        h("button", { class: "btn btn-sm", type: "button", onclick: async () => {
+          const secret = await this.call(`/api/orgs/${this.orgId}/integrations/ashby/webhook-secret`);
+          if (secret) secretBox.replaceChildren(copyField(secret.webhook_secret, "Copy secret"));
+        } }, "Reveal secret"),
+        h("button", { class: "btn btn-sm", type: "button", onclick: async () => {
+          const ok = await promptDialog({ title: "Rotate webhook secret?", message: "Update the secret in Ashby right after, or webhooks will be rejected.", okLabel: "Rotate", input: false });
+          if (ok) save({ rotate_webhook_secret: true });
+        } }, "Rotate"),
+      ),
+    ) : null;
+
+    return h("section", { class: "tile span-3 static" },
+      h("div", { class: "tile-head" }, h("h2", { class: "grow" }, "Ashby")),
+      this.statusLine(integration),
+      h("p", { class: "help" }, "Creates a session for each scheduled interview, writes the join link back to Ashby, and posts results when the interview ends. ",
+        h("a", { href: "https://github.com/levensailor/watchmecode.live/blob/main/docs/integrations/ashby.md", target: "_blank", rel: "noopener" }, "Setup guide")),
+      admin ? h("div", { class: "form-grid" },
+        fieldEl("API key", apiKey, "Candidates and Interviews read/write"),
+        fieldEl("Join link field", fieldId, "Candidate Short answer field with Enable in Email Templates"),
+        fieldEl("Interview stages", stages),
+        fieldEl("Default language", language),
+      ) : null,
+      admin ? h("div", { class: "toggles" }, Object.values(toggles).map((t) => t.el)) : null,
+      actions,
+      webhook,
+      h("div", { class: "stack" },
+        h("strong", {}, "Assessments (take-homes)"),
+        h("p", { class: "help" }, "Partner base URL for Ashby's Assessments integration. Ashby authenticates with a watchmecode API key from this page."),
+        copyField(integration.partner_base_url),
+      ),
+    );
+  },
+
+  modernLoopTile() {
+    const integration = this.integration("modernloop");
+    const s = integration.settings || {};
+    const admin = this.isAdmin();
+    const token = h("input", { class: "input", type: "password", autocomplete: "off", placeholder: integration.connected ? "•••••• stored (leave blank to keep)" : "ModernLoop API token" });
+    const stages = h("input", { class: "input", placeholder: "Job stage IDs, comma separated (blank = all)", value: (s.job_stage_ids ?? []).join(", ") });
+    const language = languageSelect(s.default_language);
+    const skip = toggleEl("Skip candidates synced from Ashby (handled by Ashby webhooks)", s.skip_ashby_candidates ?? true);
+    const result = h("div", { class: "help" });
+    const actions = admin ? h("div", { class: "row" },
+      h("button", { class: "btn btn-primary", type: "button", onclick: async () => {
+        const body = { settings: { job_stage_ids: splitIds(stages.value), default_language: language.value, skip_ashby_candidates: skip.input.checked } };
+        if (token.value.trim()) body.api_token = token.value.trim();
+        if (await this.call(`/api/orgs/${this.orgId}/integrations/modernloop`, { method: "PUT", body }, "ModernLoop settings saved")) this.refresh();
+      } }, integration.connected ? "Save" : "Connect"),
+      integration.connected ? h("button", { class: "btn", type: "button", onclick: async () => {
+        const res = await this.call(`/api/orgs/${this.orgId}/integrations/modernloop/test`, { method: "POST" });
+        if (res) toast(res.detail);
+      } }, "Test") : null,
+      integration.connected ? h("button", { class: "btn", type: "button", onclick: async () => {
+        result.textContent = "Syncing…";
+        const res = await this.call(`/api/orgs/${this.orgId}/integrations/modernloop/sync`, { method: "POST" });
+        result.textContent = res ? `Created ${res.created}, ended ${res.ended}, skipped ${res.skipped}${res.errors.length ? ` · ${res.errors[0]}` : ""}` : "";
+      } }, "Sync now") : null,
+      integration.connected ? h("button", { class: "btn btn-danger", type: "button", onclick: async () => {
+        const ok = await promptDialog({ title: "Disconnect ModernLoop?", message: "Scheduled syncs stop for this organization.", okLabel: "Disconnect", input: false });
+        if (ok && (await this.call(`/api/orgs/${this.orgId}/integrations/modernloop`, { method: "DELETE" }, "ModernLoop disconnected")) !== null) this.refresh();
+      } }, "Disconnect") : null,
+    ) : null;
+    return h("section", { class: "tile span-3 static" },
+      h("div", { class: "tile-head" }, h("h2", { class: "grow" }, "ModernLoop")),
+      this.statusLine(integration),
+      h("p", { class: "help" }, "Checks ModernLoop every 10 minutes and creates a session for each newly scheduled interview. ",
+        h("a", { href: "https://github.com/levensailor/watchmecode.live/blob/main/docs/integrations/modernloop.md", target: "_blank", rel: "noopener" }, "Setup guide")),
+      admin ? h("div", { class: "form-grid" }, fieldEl("API token", token, "Platform API token with read scopes"), fieldEl("Job stages", stages), fieldEl("Default language", language)) : null,
+      admin ? skip.el : null,
+      actions,
+      result,
+    );
+  },
+
+  templatesTile() {
+    const editing = this.editing;
+    const rows = this.templates.map((t) =>
+      h("div", { class: "org-row" },
+        h("div", { class: "grow" }, h("strong", {}, t.name), h("div", { class: "meta" }, `${languageLabel(t.language)} · ${t.time_limit_minutes ? `${t.time_limit_minutes} min` : "no limit"} · ${Object.keys(t.files).length} file(s)`)),
+        h("button", { class: "btn btn-sm", type: "button", onclick: () => { this.editing = t; this.render(); } }, "Edit"),
+        h("button", { class: "btn btn-sm btn-danger", type: "button", onclick: async () => {
+          const ok = await promptDialog({ title: `Delete ${t.name}?`, message: "Ashby can no longer start this assessment.", okLabel: "Delete", input: false });
+          if (ok && (await this.call(`/api/orgs/${this.orgId}/assessments/${t.id}`, { method: "DELETE" }, "Assessment deleted")) !== null) this.refresh();
+        } }, "Delete"),
+      ),
+    );
+    const name = h("input", { class: "input", maxlength: "120", required: true, value: editing?.name ?? "", placeholder: "e.g. Rate limiter (Python)" });
+    const description = h("input", { class: "input", maxlength: "2000", value: editing?.description ?? "", placeholder: "Shown to recruiters in Ashby" });
+    const language = languageSelect(editing?.language);
+    const minutes = h("input", { class: "input", type: "number", min: "5", max: "1440", value: String(editing?.time_limit_minutes ?? 60) });
+    const lang = () => app.languages.find((l) => l.id === language.value);
+    const entryPath = () => (editing && Object.keys(editing.files)[0]) || lang()?.entry || "main.py";
+    const starter = h("textarea", { class: "input", placeholder: "Starter code for the entry file (optional; blank uses the language template)" });
+    starter.value = editing ? editing.files[entryPath()] ?? "" : "";
+    const form = h("form", { class: "stack", onsubmit: async (e) => {
+      e.preventDefault();
+      const body = { name: name.value.trim(), description: description.value.trim(), language: language.value, time_limit_minutes: Number(minutes.value) || null };
+      if (starter.value.trim()) body.files = { ...(editing && editing.language === language.value ? editing.files : {}), [entryPath()]: starter.value };
+      const path = editing ? `/api/orgs/${this.orgId}/assessments/${editing.id}` : `/api/orgs/${this.orgId}/assessments`;
+      if (await this.call(path, { method: editing ? "PUT" : "POST", body }, editing ? "Assessment updated" : "Assessment created")) {
+        this.editing = null;
+        this.refresh();
+      }
+    } },
+      h("div", { class: "form-grid" }, fieldEl("Name", name), fieldEl("Language", language), fieldEl("Time limit (minutes)", minutes)),
+      fieldEl("Description", description),
+      fieldEl(`Starter code (${entryPath()})`, starter),
+      h("div", { class: "row" },
+        h("button", { class: "btn btn-primary", type: "submit" }, editing ? "Save assessment" : "Add assessment"),
+        editing ? h("button", { class: "btn", type: "button", onclick: () => { this.editing = null; this.render(); } }, "Cancel") : null,
+      ),
+    );
+    return h("section", { class: "tile span-6 static" },
+      h("div", { class: "tile-head" }, h("h2", { class: "grow" }, "Take-home assessments"), h("span", { class: "caption" }, `${this.templates.length}`)),
+      h("p", { class: "help" }, "Ashby lists these when a recruiter adds a watchmecode assessment to an interview plan. Candidates get a timed, solo IDE with a Submit button."),
+      h("div", { class: "org-list" }, rows.length ? rows : [h("div", { class: "empty" }, "No assessments yet.")]),
+      form,
+    );
+  },
+};
+
+async function joinWithLink(token) {
+  try {
+    const joined = await api("/api/join/link", { method: "POST", body: { token } });
+    localStorage.setItem(STORAGE.token(joined.session.id), joined.token);
+    location.replace(`#/s/${joined.session.id}`);
+  } catch (err) {
+    toast(err.status === 410 ? "This interview has ended." : err.message);
+    location.replace("#/");
+  }
+}
+
 /* Routing ----------------------------------------------------------------------------- */
 
 async function route() {
   closeMenus();
+  const invite = location.hash.match(/^#\/j\/([A-Za-z0-9._\-]+)/);
+  if (invite) {
+    await joinWithLink(decodeURIComponent(invite[1]));
+    return;
+  }
+  const orgRoute = location.hash.match(/^#\/org(?:\/([A-Za-z0-9]+))?/);
+  if (orgRoute) {
+    if (ide.sessionId) await ide.flushAll();
+    ide.close();
+    player.close();
+    await orgView.open(orgRoute[1]);
+    return;
+  }
+  $("view-org").hidden = true;
   const playback = location.hash.match(/^#\/s\/([A-Za-z0-9]+)\/play\/([A-Za-z0-9]+)/);
   if (playback) {
     if (ide.sessionId) await ide.flushAll();

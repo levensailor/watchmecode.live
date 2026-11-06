@@ -157,8 +157,11 @@ button, input, select { font: inherit; color: inherit; }
 
 .tile h2 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.01em; }
 .tile .big { font-size: 48px; font-weight: 700; line-height: 1.05; letter-spacing: -0.03em; }
-#create-form { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(200px, 1.4fr) minmax(160px, 1fr) auto; gap: 12px; align-items: end; }
-#create-form > .error, #create-form > .pin-result { grid-column: 1 / -1; }
+#create-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+#create-form > div:first-child { flex: 1 1 180px; }
+#create-form > .field { flex: 1 1 180px; }
+#create-form > .btn { flex: 0 0 auto; }
+#create-form > .error, #create-form > .pin-result { flex-basis: 100%; }
 #create-form > .error:empty { display: none; }
 
 .hero { background: var(--hero); color: #fff; border: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 20px; }
@@ -293,6 +296,36 @@ button, input, select { font: inherit; color: inherit; }
 .recording-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-inner); background: var(--inset); }
 .recording-row .meta { font-size: 12.5px; color: var(--muted); font-weight: 500; }
 
+/* Take-home ------------------------------------------------------------------------- */
+
+.chip.countdown { font-variant-numeric: tabular-nums; }
+.chip.countdown.low { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.chip.mode { background: color-mix(in srgb, var(--warn) 18%, transparent); color: color-mix(in srgb, var(--warn) 70%, var(--text)); }
+.session-info .title { font-size: 13px; color: var(--muted); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Organization settings ------------------------------------------------------------- */
+
+.org-view .tile { display: grid; gap: 14px; align-content: start; }
+.org-view .tile-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.org-view .tile-head h2 { margin: 0; }
+.org-view .tile-head .grow { min-width: 0; }
+.org-list { display: grid; gap: 8px; }
+.org-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-inner); background: var(--inset); min-width: 0; }
+.org-row .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.org-row .meta { font-size: 12.5px; color: var(--muted); font-weight: 500; }
+.inline-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.inline-form > .field { flex: 1 1 160px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.toggles { display: grid; gap: 8px; }
+.copy-field { display: flex; gap: 8px; align-items: center; }
+.copy-field code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12.5px var(--mono); padding: 9px 12px; border-radius: var(--radius-inner); background: var(--inset); }
+.status-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); font-weight: 500; }
+.status-line .chip.ok { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.status-line .chip.err { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+textarea.input { font: 13px/1.5 var(--mono); min-height: 140px; resize: vertical; }
+.help { font-size: 13px; color: var(--muted); margin: 0; }
+.help a { color: var(--accent); }
+
 /* Footer and legal pages ------------------------------------------------------------ */
 
 .site-footer {
@@ -336,7 +369,7 @@ dialog .row { justify-content: flex-end; margin-top: 16px; }
   .span-3, .span-4, .span-6 { grid-column: span 2; }
   .menubar { display: none; }
   .btn { white-space: nowrap; }
-  #create-form { grid-template-columns: 1fr; }
+  #create-form > .field, #create-form > .btn { flex-basis: 100%; }
   .session-chip { display: none; }
   .ide, .ide.no-explorer, .ide.no-side, .ide.no-explorer.no-side {
     grid-template-columns: 1fr; grid-template-rows: auto 220px 60vh 70vh;

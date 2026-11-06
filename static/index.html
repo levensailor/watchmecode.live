@@ -95,6 +95,7 @@
           <div class="dropdown right" id="user-dropdown" role="menu" hidden>
             <div class="dropdown-meta" id="user-email"></div>
             <a role="menuitem" href="#/">Candidate portal</a>
+            <a role="menuitem" href="#/org">Organization settings</a>
             <hr />
             <a role="menuitem" href="/auth/logout" id="logout-link">Log out</a>
           </div>
@@ -139,6 +140,10 @@
             <label for="language-select">Starter language</label>
             <select class="input" id="language-select"></select>
           </div>
+          <div class="field" id="org-field" hidden>
+            <label for="org-select">Organization</label>
+            <select class="input" id="org-select"></select>
+          </div>
           <button class="btn btn-primary" type="submit" id="create-btn">Generate PIN</button>
           <div class="error" id="create-error" role="alert"></div>
           <div class="pin-result" id="pin-result" hidden>
@@ -173,12 +178,18 @@
       </section>
     </main>
 
+    <!-- Organization settings -->
+    <main class="bento org-view" id="view-org" hidden></main>
+
     <!-- IDE -->
     <main class="ide" id="view-ide" hidden>
       <section class="tile ide-toolbar">
         <span class="toolbar-title" id="ide-title"></span>
         <span class="chip" id="ide-language"></span>
         <span class="chip ended" id="ide-status" hidden>Ended</span>
+        <span class="chip" id="ide-mode" hidden>Take-home</span>
+        <span class="chip countdown" id="ide-countdown" hidden title="Time remaining"></span>
+        <button class="btn btn-sm btn-primary" id="submit-btn" type="button" hidden>Submit</button>
         <span class="toolbar-sep"></span>
         <button class="btn btn-sm run-btn" id="run-btn" type="button" title="Run (Mod+Enter)">▶ Run <span id="run-target"></span></button>
         <label class="switch" title="Re-run automatically after edits">
