@@ -144,7 +144,7 @@ def test_cron_requires_secret_and_polls_all_orgs(app, admin, org, fake):
     assert client.get("/api/cron/modernloop", headers={"Authorization": "Bearer wrong"}).status_code == 401
     response = client.get("/api/cron/modernloop", headers={"Authorization": f"Bearer {CRON_SECRET}"})
     assert response.status_code == 200
-    assert response.json() == {"orgs": 1, "created": 1, "ended": 0, "skipped": 0, "errors": 0}
+    assert response.json() == {"tenants": 1, "orgs": 1, "created": 1, "ended": 0, "skipped": 0, "errors": 0}
 
 
 def test_cron_disabled_without_secret(settings):

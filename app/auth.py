@@ -13,6 +13,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from app.config import Settings
 from app.schemas import UserOut
+from app.tenancy import current_site, current_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +85,36 @@ def session_user(request: Request) -> dict | None:
     return user if isinstance(user, dict) and user.get("email") else None
 
 
+SESSION_TENANT_KEY = "tenant"
+
+
+def _workspace_check(request: Request, user: dict) -> int | None:
+    """None when the user may act in the current workspace, else the HTTP status to refuse with."""
+    tenant = current_tenant.get()
+    registry = getattr(request.app.state, "tenants", None)
+    if tenant is None or registry is None or not registry.enabled:
+        return None
+    if current_site.get() == "apex" or request.session.get(SESSION_TENANT_KEY) != tenant["slug"]:
+        return status.HTTP_401_UNAUTHORIZED
+    if not registry.role_for(tenant, user["email"]):
+        return status.HTTP_403_FORBIDDEN
+    return None
+
+
+def workspace_user(request: Request) -> dict | None:
+    user = session_user(request)
+    return user if user and _workspace_check(request, user) is None else None
+
+
 def require_user(request: Request) -> dict:
     user = session_user(request)
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sign in required")
+    refused = _workspace_check(request, user)
+    if refused == status.HTTP_403_FORBIDDEN:
+        raise HTTPException(refused, "You're not a member of this workspace")
+    if refused:
+        raise HTTPException(refused, "Sign in required")
     return user
 
 

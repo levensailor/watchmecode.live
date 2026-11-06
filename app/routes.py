@@ -15,7 +15,7 @@ from app.auth import (
     read_join_token,
     read_participant_token,
     require_user,
-    session_user,
+    workspace_user,
 )
 from app.integrations import hooks
 from app.languages import LANGUAGES
@@ -92,7 +92,7 @@ def finish_session(request: Request, session_id: str, actor_label: str, actor_em
 def participant(session_id: str, request: Request, repo: Repository = Depends(get_repo)) -> Participant:
     """Allow the owning interviewer / org member (cookie) or a candidate holding a session token."""
     session = repo.get_session(session_id)
-    user = session_user(request)
+    user = workspace_user(request)
     if session and user and repo.can_access_session(session, user["email"]):
         return Participant("interviewer", user.get("name") or user["email"], session_id)
     token = bearer_token(request)

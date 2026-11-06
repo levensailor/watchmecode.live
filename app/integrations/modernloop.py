@@ -12,6 +12,7 @@ import httpx
 from fastapi import APIRouter, FastAPI, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 
+from app import plans
 from app.auth import issue_join_token
 from app.integrations.http import IntegrationError, make_client
 from app.languages import LANGUAGES, LanguageId
@@ -195,18 +196,26 @@ def _end(repo: Repository, link: dict[str, Any]) -> bool:
     return True
 
 
-def poll_all(app: FastAPI, base: str) -> dict[str, Any]:
-    repo: Repository = app.state.repo
-    totals = {"orgs": 0, "created": 0, "ended": 0, "skipped": 0, "errors": 0}
-    for integration in repo.list_enabled_integrations(PROVIDER):
-        org = repo.get_org(integration["org_id"])
-        if not org:
+def poll_all(app: FastAPI, base: str | None = None) -> dict[str, Any]:
+    """Poll every connected org in every workspace that has the integrations feature."""
+    registry = app.state.tenants
+    settings = app.state.settings
+    totals = {"tenants": 0, "orgs": 0, "created": 0, "ended": 0, "skipped": 0, "errors": 0}
+    for tenant in registry.active_tenants():
+        if not plans.has_feature(settings, tenant, "integrations"):
             continue
-        result = poll_org(app, org, integration, base)
-        totals["orgs"] += 1
-        for key in ("created", "ended", "skipped"):
-            totals[key] += result[key]
-        totals["errors"] += len(result["errors"])
+        with registry.use(tenant) as repo:
+            totals["tenants"] += 1
+            tenant_base = base_url(settings) if tenant is not None else (base or base_url(settings))
+            for integration in repo.list_enabled_integrations(PROVIDER):
+                org = repo.get_org(integration["org_id"])
+                if not org:
+                    continue
+                result = poll_org(app, org, integration, tenant_base)
+                totals["orgs"] += 1
+                for key in ("created", "ended", "skipped"):
+                    totals[key] += result[key]
+                totals["errors"] += len(result["errors"])
     return totals
 
 

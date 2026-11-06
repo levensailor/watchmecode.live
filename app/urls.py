@@ -5,9 +5,13 @@ from __future__ import annotations
 from fastapi import Request
 
 from app.config import Settings
+from app.tenancy import current_tenant, tenant_url
 
 
 def base_url(settings: Settings, request: Request | None = None) -> str:
+    tenant = current_tenant.get()
+    if settings.multi_tenant and tenant is not None:
+        return tenant_url(settings, tenant)
     if settings.public_url:
         return settings.public_url.rstrip("/")
     if request is not None:

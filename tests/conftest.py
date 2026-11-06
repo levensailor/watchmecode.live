@@ -29,6 +29,14 @@ def settings(tmp_path):
         google_client_secret="test-secret",
         google_redirect_uri="http://testserver/auth/google/callback",
         run_timeout_seconds=30,
+        public_url="",
+        root_domain="",
+        tenant_mode="single",
+        stripe_secret_key="",
+        stripe_webhook_secret="",
+        handoff_private_key="",
+        handoff_public_key="",
+        auth_hub_url="",
     )
 
 
@@ -42,9 +50,41 @@ def client(app):
     return TestClient(app)
 
 
-def session_cookie(secret: str, user: dict) -> str:
-    payload = base64.b64encode(json.dumps({"user": user}).encode())
+def session_cookie(secret: str, user: dict, **extra) -> str:
+    payload = base64.b64encode(json.dumps({"user": user, **extra}).encode())
     return TimestampSigner(secret).sign(payload).decode()
+
+
+ROOT = "watchmecode.test"
+
+
+@pytest.fixture
+def multi_settings(settings, tmp_path):
+    return replace(
+        settings,
+        public_url=f"https://{ROOT}",
+        root_domain=ROOT,
+        tenant_mode="multi",
+        platform_sqlite_path=str(tmp_path / "platform.db"),
+        tenant_sqlite_dir=str(tmp_path / "tenants"),
+        google_redirect_uri="",
+    )
+
+
+@pytest.fixture
+def multi_app(multi_settings):
+    return create_app(multi_settings)
+
+
+def tenant_client(app, settings, slug: str | None = None, user: dict | None = None, tenant: str | None = None):
+    """TestClient on `{slug}.ROOT` (or the apex), optionally signed in and bound to `tenant`."""
+    host = f"{slug}.{ROOT}" if slug else ROOT
+    client = TestClient(app, base_url=f"https://{host}")
+    if user:
+        bound = tenant if tenant is not None else slug
+        extra = {"tenant": bound} if bound else {}
+        client.cookies.set(SESSION_COOKIE, session_cookie(settings.session_secret, user, **extra), domain=host)
+    return client
 
 
 @pytest.fixture

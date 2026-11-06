@@ -20,6 +20,7 @@ from app.integrations import ashby, modernloop
 from app.logging_config import setup_logging
 from app.repository import Repository
 from app.runner import CodeRunner
+from app.tenancy import RepoProxy, TenantMiddleware, TenantRegistry, current_site, tenant_url
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +56,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     repo = Repository(settings)
     repo.init_schema()
+    registry = TenantRegistry(settings, repo)
+    registry.init()
 
     app = FastAPI(title=settings.app_name, description=settings.app_tagline, version="0.1.0")
     app.state.settings = settings
     app.state.oauth = auth.build_oauth(settings)
-    app.state.repo = repo
+    app.state.repo = RepoProxy(repo)
+    app.state.tenants = registry
     app.state.runner = CodeRunner(settings)
     app.state.vault = Vault(settings)
     app.state.http_transport = None
@@ -81,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         https_only=settings.is_vercel,
         max_age=60 * 60 * 24 * 7,
     )
+    app.add_middleware(TenantMiddleware, registry=registry)
 
     app.include_router(auth.router)
     app.include_router(routes.router)
@@ -92,11 +97,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/health", tags=["meta"])
     def health() -> dict[str, str]:
-        return {"status": "ok", "storage": repo.kind}
+        return {"status": "ok", "storage": repo.kind, "mode": settings.tenant_mode if registry.enabled else "single"}
 
     @app.get("/j/{token}", include_in_schema=False)
     def join_link(token: str) -> RedirectResponse:
-        return RedirectResponse(f"/#/j/{quote(token, safe='')}", status_code=302)
+        target = f"/#/j/{quote(token, safe='')}"
+        if registry.enabled and current_site.get() == "apex":
+            target = tenant_url(settings, registry.default_tenant() or {"slug": settings.tenant_slug}) + target
+        return RedirectResponse(target, status_code=302)
 
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

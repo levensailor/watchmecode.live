@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -150,8 +151,23 @@ class Repository:
             finally:
                 raw.close()
 
+    SQLITE_SCRIPT = "schema.sql"
+    POSTGRES_SCRIPT = "schema_postgres.sql"
+
+    @classmethod
+    def schema_version(cls) -> str:
+        """Fingerprint of the schema scripts; tenants re-run init_schema when it changes."""
+        digest = hashlib.sha256()
+        for name in (cls.SQLITE_SCRIPT, cls.POSTGRES_SCRIPT):
+            digest.update((SQL_DIR / name).read_bytes())
+        return digest.hexdigest()[:16]
+
+    @property
+    def schema(self) -> str:
+        return self._schema
+
     def init_schema(self) -> None:
-        script = (SQL_DIR / ("schema_postgres.sql" if self.postgres else "schema.sql")).read_text()
+        script = (SQL_DIR / (self.POSTGRES_SCRIPT if self.postgres else self.SQLITE_SCRIPT)).read_text()
         if self.postgres:
             with self.connect() as conn:
                 conn.raw.execute(f'CREATE SCHEMA IF NOT EXISTS "{self._schema}"')
@@ -162,15 +178,18 @@ class Repository:
             try:
                 raw.execute("PRAGMA journal_mode = WAL")
                 raw.executescript(script)
-                existing = {row[1] for row in raw.execute("PRAGMA table_info(sessions)")}
-                for name, ddl in SESSION_EXTRA_COLUMNS:
-                    if name not in existing:
-                        raw.execute(f"ALTER TABLE sessions ADD COLUMN {name} {ddl}")
-                raw.execute("CREATE INDEX IF NOT EXISTS sessions_org ON sessions (org_id, created_at)")
+                self._sqlite_upgrade(raw)
                 raw.commit()
             finally:
                 raw.close()
-        logger.info("Schema ready (%s)", self.kind)
+        logger.info("Schema ready (%s, %s)", self.kind, self._schema if self.postgres else self._sqlite_path)
+
+    def _sqlite_upgrade(self, raw: sqlite3.Connection) -> None:
+        existing = {row[1] for row in raw.execute("PRAGMA table_info(sessions)")}
+        for name, ddl in SESSION_EXTRA_COLUMNS:
+            if name not in existing:
+                raw.execute(f"ALTER TABLE sessions ADD COLUMN {name} {ddl}")
+        raw.execute("CREATE INDEX IF NOT EXISTS sessions_org ON sessions (org_id, created_at)")
 
     # Events -----------------------------------------------------------------
 

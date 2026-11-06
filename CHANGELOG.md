@@ -4,6 +4,8 @@ Feature changes, newest first. Times are America/New_York.
 
 ## 2026-11-06
 
+- **10:35** Serve each customer workspace from its own subdomain and database schema, with a platform store for tenants, memberships, and usage, workspace-bound sign-in, and a migration runner.
+- **10:20** Capture product screenshots and a playback GIF from a seeded demo workspace for the marketing site.
 - **10:00** Document the Ashby and ModernLoop integrations, the public API, and organization settings, and update the privacy policy and terms for ATS data and integration credentials.
 - **09:55** Poll ModernLoop for scheduled interviews via Vercel cron, accept anonymous candidates on the pads API, and add the ModernLoop partnership pitch.
 - **09:50** Add the Ashby Assessments Partner API for timed take-homes: list templates, start (with candidate email), cancel, and report Started and Submitted results back to Ashby.
