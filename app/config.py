@@ -86,6 +86,7 @@ class Settings:
     stripe_prices: str = ""
     stripe_meter_event: str = "interview_credits"
     sandbox_backend: str = "local"
+    sandbox_session_minutes: int = 60
     vercel_token: str = ""
     vercel_team_id: str = ""
     vercel_project_id: str = ""
@@ -170,6 +171,7 @@ def load_settings() -> Settings:
         stripe_prices=_env("STRIPE_PRICES"),
         stripe_meter_event=_env("STRIPE_METER_EVENT", defaults.stripe_meter_event),
         sandbox_backend=_env("SANDBOX_BACKEND", defaults.sandbox_backend).lower(),
+        sandbox_session_minutes=_env_int("SANDBOX_SESSION_MINUTES", defaults.sandbox_session_minutes),
         vercel_token=_env("VERCEL_TOKEN"),
         vercel_team_id=_env("VERCEL_TEAM_ID"),
         vercel_project_id=_env("VERCEL_PROJECT_ID"),

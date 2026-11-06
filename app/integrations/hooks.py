@@ -21,6 +21,7 @@ def session_finished(app: FastAPI, session_id: str, actor_email: str | None, bas
     session = repo.get_session(session_id)
     if not session:
         return
+    app.state.runner.release(session_id)
     for link in repo.links_for_session(session_id):
         if link["provider"] != ashby.PROVIDER:
             continue

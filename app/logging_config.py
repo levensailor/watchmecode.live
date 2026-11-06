@@ -53,6 +53,6 @@ def setup_logging(log_dir: str) -> Path:
         root.addHandler(handler)
 
     root.setLevel(logging.INFO)
-    for noisy in ("httpx", "httpcore"):
+    for noisy in ("httpx", "httpcore", "httpx2", "httpcore2"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     return log_path

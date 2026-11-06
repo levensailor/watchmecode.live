@@ -23,6 +23,7 @@ from app.languages import LanguageId, language_for_path
 logger = logging.getLogger(__name__)
 
 PRESERVED_ENTRIES = {"node_modules", ".build", "go.sum"}
+SQL_LAB_SCRIPT = Path(__file__).resolve().parent / "labs" / "sql_lab.py"
 ENV_PASSTHROUGH = (
     "PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "USER", "NVM_DIR", "JAVA_HOME",
     "DOTNET_ROOT", "GOPATH", "GOROOT", "GOCACHE", "GOMODCACHE", "UV_CACHE_DIR", "UV_PYTHON_INSTALL_DIR",
@@ -309,6 +310,12 @@ class CodeRunner:
         elif lang == LanguageId.web:
             plan.notes.append("HTML/CSS render in the Preview pane.")
 
+        elif lang == LanguageId.sql:
+            plan.steps.append(Step([sys.executable, str(SQL_LAB_SCRIPT), entry_path], timeout))
+
+        elif lang == LanguageId.whiteboard:
+            plan.notes.append("Whiteboards save with the session; there's nothing to run.")
+
         return plan
 
     def _require(self, binary: str, label: str) -> str:
@@ -391,6 +398,10 @@ class CodeRunner:
         if len(data) > cap:
             text += f"\n… output truncated at {cap} bytes"
         return text
+
+    def release(self, session_id: str) -> None:
+        """Free per-session resources when a session ends (the local workspace is reused if it reopens)."""
+        return None
 
     def run(self, session_id: str, entry_path: str, files: dict[str, str]) -> RunResult:
         started = time.perf_counter()

@@ -1,8 +1,11 @@
 import {
   EditorView, basicSetup, EditorState, Compartment, keymap, undo, redo, selectAll, indentWithTab,
   openSearchPanel, StreamLanguage, oneDark, python, javascript, java, cpp, go, php, html, css, json,
-  markdown, csharp, shell,
-} from "/static/vendor/codemirror.js";
+  markdown, csharp, shell, sqlite,
+} from "wmc/codemirror";
+
+const PREVIEW_LANGUAGES = new Set(["web", "react"]);
+const WHITEBOARD_FILE = /\.excalidraw$/i;
 
 const POLL_MS = 1000;
 const POLL_HIDDEN_MS = 4000;
@@ -110,6 +113,7 @@ function applyTheme(theme) {
   localStorage.setItem(STORAGE.theme, theme);
   ide.onThemeChange();
   player.onThemeChange();
+  whiteboard.setTheme(theme);
 }
 
 function toggleTheme() {
@@ -461,6 +465,61 @@ function setupHome() {
   });
 }
 
+/* Whiteboard (Excalidraw in a same-origin iframe, saved as a .excalidraw session file) ------- */
+
+const whiteboard = {
+  frame: null,
+  path: null,
+  ready: false,
+  pending: null,
+  onChange: null,
+
+  mount(host, path, content, { readOnly = false, onChange = null } = {}) {
+    if (!this.frame || !host.contains(this.frame)) {
+      this.frame = h("iframe", { class: "whiteboard-frame", title: "Whiteboard", src: `/static/whiteboard.html?v=${WHITEBOARD_VERSION}` });
+      this.ready = false;
+      host.replaceChildren(this.frame);
+    }
+    this.path = path;
+    this.onChange = onChange;
+    this.post({ wmcBoard: "load", scene: content, readOnly, theme: document.documentElement.dataset.theme });
+  },
+
+  load(content) {
+    this.post({ wmcBoard: "load", scene: content, theme: document.documentElement.dataset.theme });
+  },
+
+  setTheme(theme) {
+    if (this.frame) this.post({ wmcBoard: "theme", theme });
+  },
+
+  post(message) {
+    if (this.ready) this.frame.contentWindow.postMessage(message, location.origin);
+    else this.pending = { ...(this.pending || {}), ...message };
+  },
+
+  unmount() {
+    this.frame?.remove();
+    this.frame = null;
+    this.path = null;
+    this.ready = false;
+    this.pending = null;
+  },
+};
+const WHITEBOARD_VERSION = new URL(import.meta.url).searchParams.get("v") || "0";
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== location.origin || !whiteboard.frame || event.source !== whiteboard.frame.contentWindow) return;
+  const data = event.data || {};
+  if (data.wmcBoard === "ready") {
+    whiteboard.ready = true;
+    if (whiteboard.pending) whiteboard.frame.contentWindow.postMessage(whiteboard.pending, location.origin);
+    whiteboard.pending = null;
+  } else if (data.wmcBoard === "change" && typeof data.scene === "string") {
+    whiteboard.onChange?.(whiteboard.path, data.scene);
+  }
+});
+
 /* IDE -------------------------------------------------------------------------------- */
 
 function languageExtension(path) {
@@ -481,6 +540,8 @@ function languageExtension(path) {
     case "css": return css();
     case "json": return json();
     case "md": return markdown();
+    case "sql": return StreamLanguage.define(sqlite);
+    case "excalidraw": return json();
     default: return [];
   }
 }
@@ -619,6 +680,7 @@ const ide = {
     this.dirty.clear();
     this.view?.destroy();
     this.view = null;
+    whiteboard.unmount();
     this.sessionId = null;
     this.state = null;
     this.files = new Map();
@@ -834,9 +896,24 @@ const ide = {
     if (!this.active) {
       this.view?.destroy();
       this.view = null;
+      whiteboard.unmount();
       host.replaceChildren(h("div", { class: "editor-empty" }, "Open or create a file to start coding."));
       return;
     }
+    if (WHITEBOARD_FILE.test(this.active)) {
+      this.view?.destroy();
+      this.view = null;
+      whiteboard.mount(host, this.active, this.files.get(this.active) ?? "", {
+        readOnly: this.locked,
+        onChange: (path, scene) => {
+          if (path !== this.active || this.files.get(path) === scene) return;
+          this.editorStates.delete(path);
+          this.onLocalEdit(path, scene);
+        },
+      });
+      return;
+    }
+    if (whiteboard.frame) whiteboard.unmount();
     const state = this.editorStates.get(this.active);
     if (!this.view) {
       host.replaceChildren();
@@ -1000,7 +1077,10 @@ const ide = {
     const isNew = !this.files.has(path);
     this.files.set(path, content);
     if (isNew) this.renderTree();
-    if (this.active === path && this.view) {
+    if (this.active === path && WHITEBOARD_FILE.test(path)) {
+      this.editorStates.delete(path);
+      whiteboard.load(content);
+    } else if (this.active === path && this.view) {
       const current = this.view.state.doc.toString();
       if (current !== content) {
         this.applyingRemote = true;
@@ -1117,13 +1197,13 @@ const ide = {
 
   isWebPreview() {
     if (!this.state) return false;
-    return this.state.session.language === "web" || (this.active && /\.(html?|css)$/i.test(this.active));
+    return PREVIEW_LANGUAGES.has(this.state.session.language) || (this.active && /\.(html?|css)$/i.test(this.active));
   },
 
   runEntry() {
     if (!this.state) return null;
     if (this.active && runnableLanguage(this.active) && !this.active.endsWith(".css")) {
-      if (!(this.state.session.language === "web" && /\.js$/.test(this.active))) return this.active;
+      if (!(PREVIEW_LANGUAGES.has(this.state.session.language) && /\.js$/.test(this.active))) return this.active;
     }
     const lang = app.languages.find((l) => l.id === this.state.session.language);
     if (lang && this.files.has(lang.entry)) return lang.entry;
@@ -1138,7 +1218,7 @@ const ide = {
   async run({ live = false } = {}) {
     const entry = this.runEntry();
     if (!entry) return toast("Create a file to run.");
-    if (/\.(html?|css)$/i.test(entry) || this.state.session.language === "web") {
+    if (/\.(html?|css)$/i.test(entry) || PREVIEW_LANGUAGES.has(this.state.session.language)) {
       this.renderPreview(true);
       if (!live) toast("Preview refreshed");
       return;
@@ -1390,6 +1470,7 @@ const player = {
     this.pause();
     this.view?.destroy();
     this.view = null;
+    whiteboard.unmount();
     this.viewPath = undefined;
     this.data = null;
     this.frames = [];
@@ -1496,6 +1577,18 @@ const player = {
     const content = path ? this.files.get(path) ?? "" : "";
     $("player-file").textContent = path ?? "—";
     $("player-actor").textContent = this.actor;
+    if (path && WHITEBOARD_FILE.test(path)) {
+      this.view?.destroy();
+      this.view = null;
+      this.viewPath = path;
+      if (whiteboard.path === path && whiteboard.frame) whiteboard.load(content);
+      else whiteboard.mount($("player-editor"), path, content, { readOnly: true });
+      return;
+    }
+    if (whiteboard.frame && $("player-editor").contains(whiteboard.frame)) {
+      whiteboard.unmount();
+      $("player-editor").replaceChildren();
+    }
     if (!this.view) {
       this.view = new EditorView({ state: this.editorState(content, path), parent: $("player-editor") });
       this.viewPath = path;
@@ -1538,7 +1631,7 @@ const player = {
   renderOutput(force) {
     const body = $("player-output");
     const htmlEntry = this.files.has("index.html") ? "index.html" : this.visiblePaths().find((p) => /\.html?$/i.test(p));
-    if (this.data.session.language === "web" && htmlEntry) {
+    if (PREVIEW_LANGUAGES.has(this.data.session.language) && htmlEntry) {
       const now = performance.now();
       if (!force && now - this.previewAt < PREVIEW_THROTTLE_MS) return;
       this.previewAt = now;

@@ -18,3 +18,4 @@ export { json } from "@codemirror/lang-json";
 export { markdown } from "@codemirror/lang-markdown";
 export { csharp } from "@codemirror/legacy-modes/mode/clike";
 export { shell } from "@codemirror/legacy-modes/mode/shell";
+export { sqlite } from "@codemirror/legacy-modes/mode/sql";

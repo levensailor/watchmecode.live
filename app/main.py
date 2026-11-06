@@ -14,12 +14,14 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import auth, orgs, platform_api, public_api, routes, site
+from app.assets import content_version
 from app.config import PROJECT_ROOT, Settings, get_settings
 from app.crypto import Vault
 from app.integrations import ashby, modernloop
 from app.logging_config import setup_logging
 from app.repository import Repository
 from app.runner import CodeRunner
+from app.sandbox_runner import SandboxRunner
 from app.tenancy import RepoProxy, TenantMiddleware, TenantRegistry, current_site, tenant_url
 
 logger = logging.getLogger(__name__)
@@ -29,8 +31,11 @@ STATIC_DIR = PROJECT_ROOT / "static"
 
 
 def asset_version() -> str:
-    mtimes = sorted(int(path.stat().st_mtime) for path in STATIC_DIR.glob("*.*"))
-    return str(mtimes[-1]) if mtimes else "0"
+    return content_version(*sorted(STATIC_DIR.glob("*.js")), *sorted(STATIC_DIR.glob("*.css")), *sorted(STATIC_DIR.glob("*.html")))
+
+
+def vendor_version() -> str:
+    return content_version(STATIC_DIR / "vendor" / "codemirror.js")
 
 
 def render_page(settings: Settings, filename: str = "index.html") -> str:
@@ -42,6 +47,7 @@ def render_page(settings: Settings, filename: str = "index.html") -> str:
         "{{CONTACT_URL}}": html.escape(settings.contact_url),
         "{{LEGAL_UPDATED}}": html.escape(settings.legal_updated),
         "{{VERSION}}": asset_version(),
+        "{{VENDOR_VERSION}}": vendor_version(),
     }
     for placeholder, value in replacements.items():
         template = template.replace(placeholder, value)
@@ -64,7 +70,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.oauth = auth.build_oauth(settings)
     app.state.repo = RepoProxy(repo)
     app.state.tenants = registry
-    app.state.runner = CodeRunner(settings)
+    local_runner = CodeRunner(settings)
+    app.state.runner = SandboxRunner(settings, local_runner) if settings.sandbox_backend == "sandbox" else local_runner
     app.state.vault = Vault(settings)
     app.state.http_transport = None
 

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Whiteboard</title>
+    <link rel="stylesheet" href="https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/prod/index.css" />
+    <style>
+      html, body, #root { height: 100%; margin: 0; }
+      body { overflow: hidden; }
+      .boot { display: grid; place-items: center; height: 100%; font: 14px system-ui, sans-serif; color: #6b7280; }
+    </style>
+    <script>
+      window.EXCALIDRAW_ASSET_PATH = "https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/prod/";
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19.1.0",
+          "react/jsx-runtime": "https://esm.sh/react@19.1.0/jsx-runtime",
+          "react-dom": "https://esm.sh/react-dom@19.1.0?external=react",
+          "react-dom/client": "https://esm.sh/react-dom@19.1.0/client?external=react"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"><div class="boot">Loading whiteboard…</div></div>
+    <script type="module">
+      import React, { useEffect, useRef, useState } from "react";
+      import { createRoot } from "react-dom/client";
+      import { Excalidraw } from "https://esm.sh/@excalidraw/excalidraw@0.18.0?external=react,react-dom";
+
+      const ORIGIN = location.origin;
+      const SAVE_DEBOUNCE_MS = 400;
+      let api = null;
+      let initialized = false;
+      let lastSent = null;
+      let resolveInitial;
+      // Excalidraw initializes its scene asynchronously after mount, so the first scene goes in through
+      // initialData; updateScene before that finishes can be overwritten.
+      const initialScene = new Promise((resolve) => { resolveInitial = resolve; });
+
+      function normalize(elements, appState, files) {
+        const live = (elements || []).filter((e) => !e.isDeleted);
+        const used = {};
+        for (const element of live) if (element.fileId && files?.[element.fileId]) used[element.fileId] = files[element.fileId];
+        return JSON.stringify(
+          { type: "excalidraw", version: 2, source: "watchmecode", elements: live,
+            appState: { viewBackgroundColor: appState?.viewBackgroundColor ?? "#ffffff" }, files: used },
+          null,
+          2,
+        );
+      }
+
+      function parse(text) {
+        try {
+          const data = JSON.parse(text || "{}");
+          return { elements: data.elements || [], appState: data.appState || {}, files: data.files || {} };
+        } catch {
+          return { elements: [], appState: {}, files: {} };
+        }
+      }
+
+      function applyScene(text) {
+        const scene = parse(text);
+        const normalized = normalize(scene.elements, scene.appState, scene.files);
+        if (!initialized) {
+          initialized = true;
+          lastSent = normalized;
+          resolveInitial({
+            elements: scene.elements,
+            appState: { viewBackgroundColor: scene.appState.viewBackgroundColor ?? "#ffffff" },
+            files: scene.files,
+            scrollToContent: true,
+          });
+          return;
+        }
+        if (normalized === lastSent || !api) return;
+        lastSent = normalized;
+        const files = Object.values(scene.files);
+        if (files.length) api.addFiles(files);
+        // Excalidraw caches shape renders by element version, so changed elements need a newer one.
+        const current = new Map(api.getSceneElementsIncludingDeleted().map((e) => [e.id, e]));
+        const elements = scene.elements.map((element) => {
+          const existing = current.get(element.id);
+          if (!existing || JSON.stringify(existing) === JSON.stringify(element)) return element;
+          return { ...element, version: Math.max(existing.version ?? 0, element.version ?? 0) + 1, versionNonce: Math.floor(Math.random() * 2 ** 31) };
+        });
+        api.updateScene({ elements, appState: { viewBackgroundColor: scene.appState.viewBackgroundColor ?? "#ffffff" } });
+      }
+
+      function Board() {
+        const [theme, setTheme] = useState(document.documentElement.dataset.theme || "light");
+        const [viewMode, setViewMode] = useState(false);
+        const viewModeRef = useRef(false);
+        const timer = useRef(null);
+
+        useEffect(() => {
+          const onMessage = (event) => {
+            if (event.origin !== ORIGIN || event.source !== parent) return;
+            const data = event.data || {};
+            if (data.theme) setTheme(data.theme === "dark" ? "dark" : "light");
+            if (typeof data.readOnly === "boolean") { viewModeRef.current = data.readOnly; setViewMode(data.readOnly); }
+            if (data.wmcBoard === "load" && typeof data.scene === "string") applyScene(data.scene);
+          };
+          addEventListener("message", onMessage);
+          parent.postMessage({ wmcBoard: "ready" }, ORIGIN);
+          return () => removeEventListener("message", onMessage);
+        }, []);
+
+        const onChange = (elements, appState, files) => {
+          if (viewModeRef.current || !initialized) return;
+          clearTimeout(timer.current);
+          timer.current = setTimeout(() => {
+            const text = normalize(elements, appState, files);
+            if (text === lastSent) return;
+            lastSent = text;
+            parent.postMessage({ wmcBoard: "change", scene: text }, ORIGIN);
+          }, SAVE_DEBOUNCE_MS);
+        };
+
+        return React.createElement(Excalidraw, {
+          excalidrawAPI: (instance) => { api = instance; },
+          initialData: initialScene,
+          theme,
+          viewModeEnabled: viewMode,
+          onChange,
+          UIOptions: { canvasActions: { loadScene: false, saveToActiveFile: false, export: { saveFileToDisk: true } } },
+        });
+      }
+
+      createRoot(document.getElementById("root")).render(React.createElement(Board));
+    </script>
+  </body>
+</html>

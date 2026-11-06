@@ -18,6 +18,9 @@ class LanguageId(StrEnum):
     php = "php"
     shell = "shell"
     web = "web"
+    sql = "sql"
+    react = "react"
+    whiteboard = "whiteboard"
 
 
 @dataclass(frozen=True)
@@ -179,6 +182,110 @@ button.addEventListener("click", () => {
 });
 '''
 
+SQL_QUERY = '''-- Every .csv file in this session is a table (employees, departments).
+-- Write queries below and press Run. Results print as tables.
+
+SELECT d.name AS department,
+       COUNT(*) AS headcount,
+       ROUND(AVG(e.salary)) AS avg_salary
+FROM employees e
+JOIN departments d ON d.id = e.department_id
+GROUP BY d.name
+ORDER BY avg_salary DESC;
+'''
+
+SQL_EMPLOYEES = '''id,name,department_id,salary,hired_on
+1,Ada Lovelace,1,182000,2019-03-04
+2,Grace Hopper,1,176000,2018-07-16
+3,Alan Turing,2,168000,2020-01-13
+4,Katherine Johnson,2,171000,2017-11-01
+5,Margaret Hamilton,1,189000,2016-05-23
+6,Linus Torvalds,3,154000,2021-09-27
+7,Barbara Liskov,3,162000,2019-12-02
+8,Edsger Dijkstra,2,158000,2022-04-18
+'''
+
+SQL_DEPARTMENTS = '''id,name,budget
+1,Platform,2400000
+2,Data,1800000
+3,Product,1500000
+'''
+
+SQL_README = '''# SQL lab
+
+1. Which department has the highest average salary?
+2. Who was hired most recently in each department?
+3. Which departments spend more than 60% of their budget on salaries?
+'''
+
+REACT_HTML = '''<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19.1.0",
+          "react-dom/client": "https://esm.sh/react-dom@19.1.0/client?external=react",
+          "htm": "https://esm.sh/htm@3.1.1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
+'''
+
+REACT_APP = '''import React, { useState } from "react";
+import { createRoot } from "react-dom/client";
+import htm from "htm";
+
+// htm gives JSX-like templates without a build step.
+const html = htm.bind(React.createElement);
+
+function Counter({ label }) {
+  const [count, setCount] = useState(0);
+  return html`
+    <div class="card">
+      <h1>${label}</h1>
+      <p>Clicked ${count} time${count === 1 ? "" : "s"}</p>
+      <button onClick=${() => setCount(count + 1)}>Click me</button>
+    </div>
+  `;
+}
+
+createRoot(document.getElementById("root")).render(html`<${Counter} label="Hello, candidate!" />`);
+console.log("React", React.version, "is ready");
+'''
+
+REACT_CSS = WEB_CSS
+
+WHITEBOARD_SCENE = '''{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "watchmecode",
+  "elements": [],
+  "appState": { "viewBackgroundColor": "#ffffff" },
+  "files": {}
+}
+'''
+
+WHITEBOARD_NOTES = '''# System design
+
+Design a URL shortener that handles 10,000 writes and 1,000,000 reads per second.
+
+- API
+- Data model
+- Storage and caching
+- Scaling and failure modes
+'''
+
+LAB_LANGUAGE_IDS = frozenset({LanguageId.sql, LanguageId.react, LanguageId.whiteboard})
+
 LANGUAGES: dict[LanguageId, Language] = {
     lang.id: lang
     for lang in (
@@ -198,6 +305,26 @@ LANGUAGES: dict[LanguageId, Language] = {
             (".html", ".htm", ".css"),
             "index.html",
             {"index.html": WEB_HTML, "style.css": WEB_CSS, "script.js": WEB_JS},
+        ),
+        Language(
+            LanguageId.sql,
+            "SQL lab",
+            (".sql",),
+            "query.sql",
+            {
+                "query.sql": SQL_QUERY,
+                "employees.csv": SQL_EMPLOYEES,
+                "departments.csv": SQL_DEPARTMENTS,
+                "README.md": SQL_README,
+            },
+        ),
+        Language(LanguageId.react, "React lab", (), "index.html", {"index.html": REACT_HTML, "app.js": REACT_APP, "style.css": REACT_CSS}),
+        Language(
+            LanguageId.whiteboard,
+            "Whiteboard",
+            (".excalidraw",),
+            "board.excalidraw",
+            {"board.excalidraw": WHITEBOARD_SCENE, "notes.md": WHITEBOARD_NOTES},
         ),
     )
 }

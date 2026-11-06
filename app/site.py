@@ -11,8 +11,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app import plans
+from app.assets import content_version
 from app.config import PROJECT_ROOT, Settings
-from app.languages import LANGUAGES
+from app.languages import LAB_LANGUAGE_IDS, LANGUAGES
 from app.tenancy import apex_url, current_site, tenant_url
 
 logger = logging.getLogger(__name__)
@@ -115,8 +116,7 @@ PAGES = {
 
 def asset_version() -> str:
     static = PROJECT_ROOT / "static"
-    mtimes = [int(p.stat().st_mtime) for p in (static / "site.css", static / "site.js") if p.exists()]
-    return str(max(mtimes)) if mtimes else "0"
+    return content_version(static / "site.css", static / "site.js")
 
 
 def context(request: Request, page: str, **extra: Any) -> dict[str, Any]:
@@ -142,7 +142,7 @@ def context(request: Request, page: str, **extra: Any) -> dict[str, Any]:
         "testimonials": TESTIMONIALS,
         "faq": FAQ,
         "competitors": COMPETITORS,
-        "languages": [lang.label for lang in LANGUAGES.values()],
+        "languages": [lang.label for lang in LANGUAGES.values() if lang.id not in LAB_LANGUAGE_IDS],
         "year": datetime.now(UTC).year,
         "version": asset_version(),
         "canonical": f"{apex_url(settings) if settings.multi_tenant else ''}{'/' if page == 'home' else '/' + page}",

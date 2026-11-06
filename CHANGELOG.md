@@ -4,6 +4,7 @@ Feature changes, newest first. Times are America/New_York.
 
 ## 2026-11-06
 
+- **11:55** Add the SQL lab (CSV files become tables, results print as tables), the React lab (live preview with no build step), and a shared Excalidraw whiteboard saved with the session, plus a Vercel Sandbox runner (`SANDBOX_BACKEND=sandbox`) that runs every language in a per-session microVM.
 - **11:10** Provision dedicated Enterprise instances (Vercel project, Supabase or Neon database, domain, hub registration) with a dry-run-first script and runbook; the shared deployment refuses to serve dedicated workspaces.
 - **11:00** Launch the product site on the apex (home, features, labs, integrations, pricing with a monthly/annual toggle, customers, security), a signup flow with a live subdomain check, a workspace picker for sign-in, and a script that creates the Stripe products, prices, meter, and webhook.
 - **10:45** Add Stripe billing (Checkout, Customer Portal, signed webhooks, metered overage), plan entitlements, interview-credit metering, a workspace signup API with a subdomain check, and a Workspace & billing view for members, sign-in domains, and plans.
