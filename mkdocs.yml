@@ -36,6 +36,8 @@ nav:
       - Pricing: product/pricing.md
       - Integrations roadmap: product/integrations.md
       - Labs roadmap: product/labs.md
+  - Strategy:
+      - Board review: strategy/board-review.md
   - Integrations:
       - Ashby: integrations/ashby.md
       - ModernLoop: integrations/modernloop.md

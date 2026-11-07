@@ -2,6 +2,10 @@
 
 Feature changes, newest first. Times are America/New_York.
 
+## 2026-11-07
+
+- **10:40** Add a board review and business plan (`docs/strategy/board-review.md`): five advisors debate demand, market size, competition, pricing, unit economics, scalability, and security, vote to improve before pursuing, and lay out the beachhead, pricing changes, milestones, financial model, hiring plan, compliance roadmap, and risk register.
+
 ## 2026-11-06
 
 - **13:45** Add the AI prompt lab: candidates write the prompt they'd give a coding agent, and an AI reviewer on Vercel AI Gateway mocks that agent, flags gaps and risky assumptions, and scores intent, guardrails, and context.
