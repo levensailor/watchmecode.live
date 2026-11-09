@@ -1,15 +1,22 @@
 import {
   EditorView, basicSetup, EditorState, Compartment, keymap, undo, redo, selectAll, indentWithTab,
   openSearchPanel, StreamLanguage, oneDark, python, javascript, java, cpp, go, php, html, css, json,
-  markdown, csharp, shell, sqlite,
+  markdown, csharp, shell, sqlite, StateEffect, StateField, ChangeSet, Decoration, WidgetType,
+  collab, receiveUpdates, sendableUpdates, getSyncedVersion, RealtimeClient,
 } from "wmc/codemirror";
 
 const PREVIEW_LANGUAGES = new Set(["web", "react"]);
 const WHITEBOARD_FILE = /\.excalidraw$/i;
 
 const POLL_MS = 1000;
+const POLL_REALTIME_MS = 3000;
 const POLL_HIDDEN_MS = 4000;
 const SAVE_DEBOUNCE_MS = 350;
+const PUSH_THROTTLE_MS = 120;
+const PRESENCE_THROTTLE_MS = 1000;
+const CARET_THROTTLE_MS = 150;
+const HINT_THROTTLE_MS = 150;
+const PRESENCE_COLORS = ["#6e56cf", "#e5484d", "#30a46c", "#f76b15", "#0090ff", "#d6409f", "#12a594", "#ab4aba"];
 const LIVE_DEBOUNCE_MS = 1200;
 const KEEP_FILE = ".keep";
 const NOTE_LINE = /^\[(Installing|HTML|uv|pip|npm)[^\]]*\]$/;
@@ -520,8 +527,210 @@ window.addEventListener("message", (event) => {
   }
 });
 
-/* IDE -------------------------------------------------------------------------------- */
+/* Remote cursors (presence) ------------------------------------------------------------- */
 
+const setRemoteCursors = StateEffect.define();
+
+class RemoteCaret extends WidgetType {
+  constructor(name, color) {
+    super();
+    this.name = name;
+    this.color = color;
+  }
+
+  eq(other) {
+    return other.name === this.name && other.color === this.color;
+  }
+
+  toDOM() {
+    const caret = h("span", { class: "cm-remote-caret", style: `border-color: ${this.color}` },
+      h("span", { class: "cm-remote-label", style: `background: ${this.color}` }, this.name));
+    caret.setAttribute("aria-hidden", "true");
+    return caret;
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
+function remoteCursorDecorations(cursors, docLength) {
+  const clamp = (n) => Math.max(0, Math.min(docLength, Number(n) || 0));
+  const ranges = [];
+  for (const c of cursors) {
+    const head = clamp(c.head);
+    const anchor = clamp(c.anchor ?? c.head);
+    if (anchor !== head) {
+      ranges.push(Decoration.mark({ attributes: { class: "cm-remote-selection", style: `background-color: ${c.color}2e` } })
+        .range(Math.min(anchor, head), Math.max(anchor, head)));
+    }
+    ranges.push(Decoration.widget({ widget: new RemoteCaret(c.name, c.color), side: 1 }).range(head));
+  }
+  return Decoration.set(ranges, true);
+}
+
+const remoteCursorsField = StateField.define({
+  create: () => Decoration.none,
+  update(decorations, tr) {
+    let next = decorations.map(tr.changes);
+    for (const effect of tr.effects) if (effect.is(setRemoteCursors)) next = remoteCursorDecorations(effect.value, tr.state.doc.length);
+    return next;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+function colorFor(id) {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return PRESENCE_COLORS[hash % PRESENCE_COLORS.length];
+}
+
+/* Supabase Realtime: change hints and presence. The server's collab log stays the source of truth. */
+
+const realtime = {
+  client: null,
+  channel: null,
+  config: null,
+  connected: false,
+  me: null,
+  sentPresence: "",
+  presenceTimer: null,
+  caret: null,
+  sentCaret: "",
+  caretTimer: null,
+  pendingHints: new Map(),
+  hintTimer: null,
+  retryTimer: null,
+  retries: 0,
+
+  connect(config, me) {
+    this.disconnect();
+    if (!config) return;
+    this.config = config;
+    this.me = me;
+    try {
+      this.client = new RealtimeClient(`${config.url.replace(/^http/i, "ws")}/realtime/v1`, { params: { apikey: config.key } });
+      this.client.setAuth(config.key);
+      this.join();
+    } catch (err) {
+      console.warn("Realtime unavailable", err);
+      this.disconnect();
+    }
+  },
+
+  join() {
+    const channel = this.client.channel(this.config.topic, { config: { broadcast: { self: false }, presence: { key: CLIENT_ID } } });
+    this.channel = channel;
+    channel
+      .on("broadcast", { event: "hint" }, ({ payload }) => ide.onHint(payload || {}))
+      .on("broadcast", { event: "cursor" }, ({ payload }) => ide.onRemoteCaret(payload || {}))
+      .on("presence", { event: "sync" }, () => ide.onPresence(channel.presenceState()))
+      .subscribe((status) => {
+        if (channel !== this.channel) return;
+        this.connected = status === "SUBSCRIBED";
+        if (this.connected) {
+          this.retries = 0;
+          this.sentPresence = "";
+          this.sentCaret = "";
+          this.flushPresence();
+          this.flushCaret();
+          this.flushHints();
+        } else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
+          this.rejoinLater();
+        }
+        ide.onRealtimeStatus(this.connected);
+      });
+  },
+
+  rejoinLater() {
+    if (!this.client || this.retryTimer) return;
+    const delay = Math.min(30_000, 1000 * 2 ** this.retries++);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      if (!this.client) return;
+      const stale = this.channel;
+      this.channel = null;
+      stale?.unsubscribe();
+      this.join();
+    }, delay);
+  },
+
+  hint(payload) {
+    if (!this.client) return;
+    // Coalesce per file (latest version wins) so fast typing stays within Realtime's message limits.
+    // Hints raised while the channel is down are sent once it rejoins.
+    this.pendingHints.set(payload.path ?? "*", { ...payload, from: CLIENT_ID });
+    if (this.hintTimer) return;
+    this.hintTimer = setTimeout(() => {
+      this.hintTimer = null;
+      this.flushHints();
+    }, HINT_THROTTLE_MS);
+  },
+
+  flushHints() {
+    if (!this.connected) return;
+    const hints = [...this.pendingHints.values()];
+    this.pendingHints.clear();
+    for (const payload of hints) this.channel.send({ type: "broadcast", event: "hint", payload });
+  },
+
+  // Presence carries identity and the open file only. Supabase closes channels whose clients update
+  // presence too often, so carets travel as broadcast messages instead.
+  track(patch) {
+    if (!this.me) return;
+    this.me = { ...this.me, ...patch };
+    if (this.presenceTimer) return;
+    this.presenceTimer = setTimeout(() => {
+      this.presenceTimer = null;
+      this.flushPresence();
+    }, PRESENCE_THROTTLE_MS);
+  },
+
+  flushPresence() {
+    const snapshot = JSON.stringify(this.me);
+    if (!this.connected || snapshot === this.sentPresence) return;
+    this.sentPresence = snapshot;
+    this.channel.track(this.me);
+  },
+
+  moveCaret(caret) {
+    if (!this.client) return;
+    this.caret = caret;
+    if (this.caretTimer) return;
+    this.caretTimer = setTimeout(() => {
+      this.caretTimer = null;
+      this.flushCaret();
+    }, CARET_THROTTLE_MS);
+  },
+
+  flushCaret({ force = false } = {}) {
+    if (!this.connected || !this.caret) return;
+    const snapshot = JSON.stringify(this.caret);
+    if (!force && snapshot === this.sentCaret) return;
+    this.sentCaret = snapshot;
+    this.channel.send({ type: "broadcast", event: "cursor", payload: { ...this.caret, from: CLIENT_ID } });
+  },
+
+  disconnect() {
+    clearTimeout(this.presenceTimer);
+    clearTimeout(this.caretTimer);
+    clearTimeout(this.hintTimer);
+    clearTimeout(this.retryTimer);
+    const { client, channel } = this;
+    Object.assign(this, { client: null, channel: null, config: null, connected: false, me: null, sentPresence: "" });
+    Object.assign(this, { caret: null, sentCaret: "", caretTimer: null });
+    Object.assign(this, { presenceTimer: null, hintTimer: null, retryTimer: null, retries: 0 });
+    this.pendingHints.clear();
+    try {
+      channel?.unsubscribe();
+      client?.disconnect();
+    } catch {
+      // Already closed.
+    }
+  },
+};
+
+/* IDE -------------------------------------------------------------------------------- */
 function languageExtension(path) {
   const ext = path.toLowerCase().split(".").pop();
   switch (ext) {
@@ -576,6 +785,11 @@ const ide = {
   themeCompartment: new Compartment(),
   applyingRemote: false,
   dirty: new Map(),
+  versions: new Map(),
+  refs: new Map(),
+  syncing: new Map(),
+  peers: [],
+  carets: new Map(),
   cursor: 0,
   pollTimer: null,
   polling: false,
@@ -618,6 +832,13 @@ const ide = {
     this.state = state;
     this.cursor = state.cursor;
     this.files = new Map(state.files.map((f) => [f.path, f.content]));
+    this.versions = new Map(state.files.map((f) => [f.path, f.version ?? 0]));
+    realtime.connect(state.realtime, {
+      name: state.role === "interviewer" ? (app.me?.name || "Interviewer") : state.session.candidate_name,
+      role: state.role,
+      color: colorFor(CLIENT_ID),
+      path: null,
+    });
     this.renderHeader();
     this.renderTree();
     const lang = app.languages.find((l) => l.id === state.session.language);
@@ -678,6 +899,14 @@ const ide = {
     clearTimeout(this.liveTimer);
     for (const pending of this.dirty.values()) clearTimeout(pending);
     this.dirty.clear();
+    for (const meta of this.syncing.values()) clearTimeout(meta.timer);
+    this.syncing = new Map();
+    this.versions = new Map();
+    this.refs = new Map();
+    this.peers = [];
+    this.carets = new Map();
+    realtime.disconnect();
+    this.renderPresence();
     this.view?.destroy();
     this.view = null;
     whiteboard.unmount();
@@ -860,6 +1089,9 @@ const ide = {
   },
 
   createEditorState(path) {
+    // The ref follows renames, so listeners and pushes always use the file's current path.
+    const ref = this.refs.get(path) ?? { path };
+    this.refs.set(path, ref);
     return EditorState.create({
       doc: this.files.get(path) ?? "",
       extensions: [
@@ -871,11 +1103,230 @@ const ide = {
         ]),
         languageExtension(path),
         this.themeCompartment.of(this.themeExtension()),
+        collab({ startVersion: this.versions.get(path) ?? 0, clientID: CLIENT_ID }),
+        remoteCursorsField,
         EditorView.updateListener.of((update) => {
-          if (update.docChanged && !this.applyingRemote) this.onLocalEdit(path, update.state.doc.toString());
+          if (update.docChanged && !this.applyingRemote) this.onLocalEdit(ref.path, update.state.doc.toString());
+          if ((update.selectionSet || update.docChanged) && ref.path === this.active) {
+            const { anchor, head } = update.state.selection.main;
+            realtime.moveCaret({ path: ref.path, anchor, head });
+          }
         }),
       ],
     });
+  },
+
+  /* Collaborative editing: CodeMirror collab over the push/pull API, Realtime only as a hint ----- */
+
+  isCollab(path) {
+    return this.editorStates.has(path) && !WHITEBOARD_FILE.test(path);
+  },
+
+  stateFor(path) {
+    if (path === this.active && this.view) return this.view.state;
+    return this.editorStates.get(path) ?? null;
+  },
+
+  applyCollabTransaction(path, tr) {
+    if (path === this.active && this.view) {
+      this.applyingRemote = true;
+      try {
+        this.view.dispatch(tr);
+      } finally {
+        this.applyingRemote = false;
+      }
+    } else {
+      this.editorStates.set(path, tr.state);
+    }
+    this.files.set(path, tr.state.doc.toString());
+  },
+
+  syncMeta(path) {
+    let meta = this.syncing.get(path);
+    if (!meta) this.syncing.set(path, (meta = { timer: null, pushing: null, pulling: null, pullAgain: false }));
+    return meta;
+  },
+
+  hasUnsynced() {
+    if (this.dirty.size) return true;
+    for (const path of this.editorStates.keys()) {
+      const state = this.isCollab(path) && this.stateFor(path);
+      if (state && sendableUpdates(state).length) return true;
+    }
+    return false;
+  },
+
+  schedulePush(path) {
+    const meta = this.syncMeta(path);
+    this.setSync("saving", "Saving…");
+    // Throttle rather than debounce, so a peer sees steady typing as it happens.
+    if (meta.timer) return;
+    meta.timer = setTimeout(() => this.push(path), PUSH_THROTTLE_MS);
+  },
+
+  push(path) {
+    const meta = this.syncMeta(path);
+    clearTimeout(meta.timer);
+    meta.timer = null;
+    if (meta.pushing) return meta.pushing.then(() => this.push(path));
+    meta.pushing = (async () => {
+      await meta.pulling;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const state = this.isCollab(path) && this.stateFor(path);
+        if (!state || !this.sessionId) return;
+        const updates = sendableUpdates(state);
+        if (!updates.length) return;
+        const result = await api(`/api/sessions/${this.sessionId}/collab`, {
+          method: "POST",
+          sessionId: this.sessionId,
+          body: {
+            path,
+            version: getSyncedVersion(state),
+            updates: updates.map((u) => ({ clientID: u.clientID, changes: u.changes.toJSON() })),
+          },
+        });
+        if (result.ok) realtime.hint({ path, version: result.version });
+        // Pulling confirms our own updates (collab recognizes them by clientID) and rebases the rest.
+        await this.pull(path);
+      }
+    })()
+      .catch((err) => {
+        if (err.status === 422) return this.resync(path);
+        this.handleSyncError(err);
+      })
+      .finally(() => {
+        meta.pushing = null;
+        if (!this.hasUnsynced()) this.setSync("ok", "Saved");
+      });
+    return meta.pushing;
+  },
+
+  pull(path) {
+    const meta = this.syncMeta(path);
+    if (meta.pulling) {
+      meta.pullAgain = true;
+      return meta.pulling;
+    }
+    meta.pulling = (async () => {
+      do {
+        meta.pullAgain = false;
+        const state = this.isCollab(path) && this.stateFor(path);
+        if (!state || !this.sessionId) return;
+        const since = getSyncedVersion(state);
+        const result = await api(
+          `/api/sessions/${this.sessionId}/collab?path=${encodeURIComponent(path)}&since=${since}`,
+          { sessionId: this.sessionId },
+        );
+        const current = this.isCollab(path) && this.stateFor(path);
+        if (!current || getSyncedVersion(current) !== since) continue;
+        if (result.resync) {
+          this.resetDoc(path, result.content ?? "", result.version);
+        } else if (result.updates.length) {
+          const updates = result.updates.map((u) => ({ clientID: u.clientID, changes: ChangeSet.fromJSON(u.changes) }));
+          this.applyCollabTransaction(path, receiveUpdates(current, updates));
+          this.afterRemoteChange(path);
+        }
+        this.versions.set(path, result.version);
+      } while (meta.pullAgain);
+    })().finally(() => {
+      meta.pulling = null;
+    });
+    return meta.pulling;
+  },
+
+  resetDoc(path, content, version) {
+    this.files.set(path, content);
+    this.versions.set(path, version);
+    const state = this.createEditorState(path);
+    this.editorStates.set(path, state);
+    if (path === this.active && this.view) {
+      this.view.setState(state);
+      this.view.dispatch({ effects: this.themeCompartment.reconfigure(this.themeExtension()) });
+      this.renderRemoteCursors();
+    }
+    this.afterRemoteChange(path);
+  },
+
+  resync(path) {
+    if (!this.sessionId) return;
+    return api(`/api/sessions/${this.sessionId}/collab?path=${encodeURIComponent(path)}&since=0`, { sessionId: this.sessionId })
+      .then((result) => this.resetDoc(path, result.resync ? result.content ?? "" : this.files.get(path) ?? "", result.version))
+      .catch((err) => this.handleSyncError(err));
+  },
+
+  afterRemoteChange(path) {
+    if ($("live-toggle").checked && this.isWebPreview()) this.renderPreview();
+    if (path === this.active) this.updateRunTarget();
+  },
+
+  onHint(hint) {
+    if (!this.sessionId || hint.from === CLIENT_ID) return;
+    if (hint.path && this.isCollab(hint.path)) {
+      const state = this.stateFor(hint.path);
+      if (state && (hint.version == null || hint.version > getSyncedVersion(state))) this.pull(hint.path);
+      return;
+    }
+    this.schedulePoll(0);
+  },
+
+  onRealtimeStatus(connected) {
+    $("presence").classList.toggle("live", connected);
+    $("presence").title = connected ? "Live: edits and cursors sync instantly" : "Syncing every second";
+    if (connected) {
+      realtime.track({ path: this.active });
+      realtime.moveCaret({ path: this.active, ...this.selectionOf(this.active) });
+      // Hints sent while the channel was down are gone; catch up from the event feed.
+      this.schedulePoll(0);
+    }
+    this.renderPresence();
+  },
+
+  selectionOf(path) {
+    const state = path && this.stateFor(path);
+    if (!state) return { anchor: 0, head: 0 };
+    const { anchor, head } = state.selection.main;
+    return { anchor, head };
+  },
+
+  onPresence(presenceState) {
+    const peers = [];
+    for (const [key, metas] of Object.entries(presenceState || {})) {
+      if (key === CLIENT_ID || !metas?.length) continue;
+      peers.push({ id: key, ...metas[metas.length - 1] });
+    }
+    const known = new Set(this.peers.map((p) => p.id));
+    const ids = new Set(peers.map((p) => p.id));
+    for (const id of this.carets.keys()) if (!ids.has(id)) this.carets.delete(id);
+    this.peers = peers;
+    // Newcomers have not seen our caret yet.
+    if (peers.some((p) => !known.has(p.id))) realtime.flushCaret({ force: true });
+    this.renderPresence();
+    this.renderRemoteCursors();
+  },
+
+  onRemoteCaret(caret) {
+    if (!caret.from || caret.from === CLIENT_ID) return;
+    this.carets.set(caret.from, { path: caret.path, anchor: caret.anchor, head: caret.head });
+    this.renderRemoteCursors();
+  },
+
+  renderPresence() {
+    const el = $("presence");
+    if (!el) return;
+    el.replaceChildren(...this.peers.map((p) =>
+      h("span", { class: "presence-avatar", style: `background: ${p.color}`, title: `${p.name}${p.path ? ` · ${p.path}` : ""}` },
+        (p.name || "?").slice(0, 1).toUpperCase())));
+    el.hidden = !this.peers.length && !realtime.connected;
+  },
+
+  renderRemoteCursors() {
+    if (!this.view || !this.active || !this.isCollab(this.active)) return;
+    const cursors = [];
+    for (const peer of this.peers) {
+      const caret = this.carets.get(peer.id);
+      if (caret && caret.path === this.active) cursors.push({ name: peer.name, color: peer.color, anchor: caret.anchor, head: caret.head });
+    }
+    this.view.dispatch({ effects: setRemoteCursors.of(cursors) });
   },
 
   openFile(path) {
@@ -883,7 +1334,9 @@ const ide = {
     if (this.view && this.active) this.editorStates.set(this.active, this.view.state);
     if (!this.openTabs.includes(path)) this.openTabs.push(path);
     this.active = path;
-    if (!this.editorStates.has(path)) this.editorStates.set(path, this.createEditorState(path));
+    if (!this.editorStates.has(path) && !WHITEBOARD_FILE.test(path)) this.editorStates.set(path, this.createEditorState(path));
+    realtime.track({ path });
+    realtime.moveCaret({ path, ...this.selectionOf(path) });
     this.renderEditor();
     this.renderTree();
     this.updateRunTarget();
@@ -922,6 +1375,7 @@ const ide = {
       this.view.setState(state);
     }
     this.view.dispatch({ effects: this.themeCompartment.reconfigure(this.themeExtension()) });
+    this.renderRemoteCursors();
     this.view.focus();
   },
 
@@ -953,9 +1407,13 @@ const ide = {
   onLocalEdit(path, content) {
     this.files.set(path, content);
     if (this.locked) return;
-    clearTimeout(this.dirty.get(path));
-    this.dirty.set(path, setTimeout(() => this.save(path), SAVE_DEBOUNCE_MS));
-    this.setSync("saving", "Saving…");
+    if (this.isCollab(path)) {
+      this.schedulePush(path);
+    } else {
+      clearTimeout(this.dirty.get(path));
+      this.dirty.set(path, setTimeout(() => this.save(path), SAVE_DEBOUNCE_MS));
+      this.setSync("saving", "Saving…");
+    }
     if ($("live-toggle").checked) {
       clearTimeout(this.liveTimer);
       this.liveTimer = setTimeout(() => this.run({ live: true }), LIVE_DEBOUNCE_MS);
@@ -963,14 +1421,17 @@ const ide = {
   },
 
   flush(path) {
+    if (path && this.isCollab(path)) return this.push(path);
     if (path && this.dirty.has(path)) {
       clearTimeout(this.dirty.get(path));
-      this.save(path);
+      return this.save(path);
     }
   },
 
   async flushAll() {
-    await Promise.all([...this.dirty.keys()].map((path) => { clearTimeout(this.dirty.get(path)); return this.save(path); }));
+    const saves = [...this.dirty.keys()].map((path) => { clearTimeout(this.dirty.get(path)); return this.save(path); });
+    const pushes = [...this.editorStates.keys()].filter((path) => this.isCollab(path)).map((path) => this.push(path));
+    await Promise.all([...saves, ...pushes]);
   },
 
   async save(path) {
@@ -982,7 +1443,8 @@ const ide = {
         sessionId: this.sessionId,
         body: { path, content: this.files.get(path) },
       });
-      if (!this.dirty.size) this.setSync("ok", "Saved");
+      realtime.hint({ feed: true });
+      if (!this.hasUnsynced()) this.setSync("ok", "Saved");
     } catch (err) {
       this.handleSyncError(err);
     }
@@ -1004,13 +1466,13 @@ const ide = {
       if (generation !== this.generation) return;
       for (const event of changes.events) this.applyEvent(event);
       this.cursor = changes.cursor;
-      if (!this.dirty.size) this.setSync("ok", "Synced");
+      if (!this.hasUnsynced()) this.setSync("ok", "Synced");
     } catch (err) {
       this.handleSyncError(err);
     } finally {
       this.polling = false;
       if (generation === this.generation && this.sessionId) {
-        this.schedulePoll(document.hidden ? POLL_HIDDEN_MS : POLL_MS);
+        this.schedulePoll(document.hidden ? POLL_HIDDEN_MS : realtime.connected ? POLL_REALTIME_MS : POLL_MS);
       }
     }
   },
@@ -1053,7 +1515,7 @@ const ide = {
     const who = event.actor;
     switch (event.kind) {
       case "file_upsert":
-        this.applyRemoteContent(event.path, event.data.content);
+        this.applyRemoteContent(event.path, event.data.content, event.data.version);
         this.setSync("ok", `${who} edited ${event.path.split("/").pop()}`);
         break;
       case "file_delete":
@@ -1072,35 +1534,28 @@ const ide = {
     }
   },
 
-  applyRemoteContent(path, content) {
+  applyRemoteContent(path, content, version) {
+    if (this.isCollab(path)) {
+      const state = this.stateFor(path);
+      if (version == null || version > getSyncedVersion(state)) this.pull(path);
+      return;
+    }
     if (this.dirty.has(path)) return;
     const isNew = !this.files.has(path);
     this.files.set(path, content);
+    if (version != null) this.versions.set(path, version);
     if (isNew) this.renderTree();
-    if (this.active === path && WHITEBOARD_FILE.test(path)) {
-      this.editorStates.delete(path);
-      whiteboard.load(content);
-    } else if (this.active === path && this.view) {
-      const current = this.view.state.doc.toString();
-      if (current !== content) {
-        this.applyingRemote = true;
-        try {
-          this.view.dispatch({ changes: commonPrefixSuffix(current, content) });
-        } finally {
-          this.applyingRemote = false;
-        }
-      }
-    } else if (this.editorStates.has(path)) {
-      const state = this.editorStates.get(path);
-      const current = state.doc.toString();
-      if (current !== content) this.editorStates.set(path, state.update({ changes: commonPrefixSuffix(current, content) }).state);
-    }
+    if (this.active === path && WHITEBOARD_FILE.test(path)) whiteboard.load(content);
     if ($("live-toggle").checked && this.isWebPreview()) this.renderPreview();
   },
 
   removeLocal(path) {
     this.files.delete(path);
     this.editorStates.delete(path);
+    this.versions.delete(path);
+    this.refs.delete(path);
+    clearTimeout(this.syncing.get(path)?.timer);
+    this.syncing.delete(path);
     clearTimeout(this.dirty.get(path));
     this.dirty.delete(path);
     this.openTabs = this.openTabs.filter((p) => p !== path);
@@ -1112,11 +1567,23 @@ const ide = {
     for (const [from, to] of Object.entries(mapping)) {
       this.files.set(to, this.files.get(from) ?? "");
       this.files.delete(from);
-      this.editorStates.delete(from);
+      // Editor states move with the file so collab history and unconfirmed edits survive the rename.
+      for (const map of [this.editorStates, this.versions, this.syncing]) {
+        if (map.has(from)) map.set(to, map.get(from));
+        map.delete(from);
+      }
+      const ref = this.refs.get(from);
+      if (ref) {
+        ref.path = to;
+        this.refs.set(to, ref);
+        this.refs.delete(from);
+      }
       this.openTabs = this.openTabs.map((p) => (p === from ? to : p));
       if (this.active === from) this.active = to;
     }
-    for (const path of this.openTabs) if (!this.editorStates.has(path)) this.editorStates.set(path, this.createEditorState(path));
+    for (const path of this.openTabs) {
+      if (!this.editorStates.has(path) && !WHITEBOARD_FILE.test(path)) this.editorStates.set(path, this.createEditorState(path));
+    }
     this.renderTree();
     this.renderEditor();
     this.updateRunTarget();
@@ -1140,6 +1607,8 @@ const ide = {
     try {
       const file = await api(`/api/sessions/${this.sessionId}/files`, { method: "PUT", sessionId: this.sessionId, body: { path, content: "" } });
       this.files.set(file.path, file.content);
+      this.versions.set(file.path, file.version ?? 0);
+      realtime.hint({ feed: true });
       this.renderTree();
       this.openFile(file.path);
     } catch (err) {
@@ -1154,6 +1623,8 @@ const ide = {
     try {
       const file = await api(`/api/sessions/${this.sessionId}/files`, { method: "PUT", sessionId: this.sessionId, body: { path, content: "" } });
       this.files.set(file.path, "");
+      this.versions.set(file.path, file.version ?? 0);
+      realtime.hint({ feed: true });
       this.renderTree();
     } catch (err) {
       toast(err.message);
@@ -1164,7 +1635,7 @@ const ide = {
     if (!path) return toast("Select a file to rename.");
     const target = await promptDialog({ title: "Rename", label: "New path", value: path, okLabel: "Rename" });
     if (!target || target === path) return;
-    this.flush(path);
+    await this.flush(path);
     try {
       const result = await api(`/api/sessions/${this.sessionId}/files/rename`, {
         method: "POST",
@@ -1172,6 +1643,7 @@ const ide = {
         body: { old_path: path, new_path: target },
       });
       this.applyRename(result.renamed);
+      realtime.hint({ feed: true });
     } catch (err) {
       toast(err.message);
     }
@@ -1185,6 +1657,7 @@ const ide = {
     try {
       const result = await api(`/api/sessions/${this.sessionId}/files?path=${encodeURIComponent(path)}`, { method: "DELETE", sessionId: this.sessionId });
       for (const p of result.deleted) this.removeLocal(p);
+      realtime.hint({ feed: true });
       this.renderTree();
       this.renderEditor();
       this.updateRunTarget();
@@ -1232,6 +1705,7 @@ const ide = {
       const result = await api(`/api/sessions/${this.sessionId}/run`, { method: "POST", sessionId: this.sessionId, body: { entry_path: entry } });
       this.appendRun(result, "You");
       this.lastRun = result;
+      realtime.hint({ feed: true });
       this.renderPreview();
     } catch (err) {
       toast(err.message);

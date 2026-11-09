@@ -97,24 +97,45 @@ sequenceDiagram
   end
 ```
 
-## Run and sync
+## Co-editing
 
-Vercel functions cannot hold WebSockets, so both browsers poll an append-only change feed. Each request carries an `X-Client-Id`, and a browser skips its own events.
+Text files use [`@codemirror/collab`](https://codemirror.net/examples/collab/). The server is the authority: each file has a `version`, and `doc_updates` keeps the last 1,000 change sets.
+
+- An editor pushes its unconfirmed change sets with the version they were based on (`POST /collab`, throttled to 120 ms). The server accepts them only if that version is still current.
+- A rejected push means someone else got there first. The editor pulls the missing updates (`GET /collab?since=`), `receiveUpdates` rebases its own pending edits over them, and it pushes again.
+- Pulling also confirms an editor's own updates, which collab recognizes by client ID.
+- If the history no longer reaches back far enough, the pull returns `resync` with the full content.
+- Whole-file writes (uploads, the API, the whiteboard) bump the version and log a replacement change set, so editors stay in step.
+
+Vercel functions cannot hold WebSockets, so the fast path runs over Supabase Realtime. Each session gets a broadcast channel whose name is an HMAC of the session ID, so it can't be guessed.
+
+| Message | Carries | Purpose |
+| --- | --- | --- |
+| `hint` broadcast | `{path, version}` or `{feed: true}` | Tells peers to pull now. No document content travels over Realtime. |
+| `cursor` broadcast | `{path, anchor, head}`, throttled to 150 ms | Draws the named caret and selection. |
+| Presence | name, role, color, open file | Shows avatars. Supabase closes channels whose clients update presence too often, so cursors stay out of it. |
+
+Polling the append-only change feed stays as the fallback: every second without Realtime, every 3 seconds with it, and once right after a reconnect. Each request carries an `X-Client-Id`, and a browser skips its own events.
 
 ```mermaid
 sequenceDiagram
   participant A as Participant A
   participant API as FastAPI
   participant DB as Database
+  participant RT as Supabase Realtime
   participant R as Runner
   participant B as Participant B
-  A->>API: PUT /files (debounced 350 ms)
-  API->>DB: upsert file + event file_upsert
-  loop every ~1 s
+  A->>API: POST /collab {version, updates}
+  API->>DB: append doc_updates, bump files.version, event file_upsert
+  API-->>A: ok, version
+  A->>RT: hint {path, version}
+  RT-->>B: hint
+  B->>API: GET /collab?since=version
+  API-->>B: updates
+  B->>B: receiveUpdates (rebase local edits)
+  loop every 1-3 s (fallback)
     B->>API: GET /changes?since=cursor
-    API-->>B: events after cursor
   end
-  B->>B: patch editor (minimal diff)
   A->>API: POST /run (manual or live refresh)
   API->>R: sync files to workspace, install imports, execute with timeout
   R-->>API: stdout, stderr, exit code
@@ -125,4 +146,4 @@ sequenceDiagram
 
 ## Storage
 
-Tables: `sessions`, `files`, `runs`, and `events`, the change feed. A partial unique index keeps PINs unique among active sessions. On Postgres, every connection runs `SET LOCAL search_path` to the `watchmecode` schema. That setting lasts only for the transaction, which is safe behind Supabase's transaction-mode pooler.
+Tables: `sessions`, `files` (with a collab `version`), `doc_updates` (recent change sets per file), `runs`, and `events`, the change feed. A partial unique index keeps PINs unique among active sessions. On Postgres, every connection runs `SET LOCAL search_path` to the `watchmecode` schema. That setting lasts only for the transaction, which is safe behind Supabase's transaction-mode pooler.

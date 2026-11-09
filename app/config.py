@@ -87,6 +87,9 @@ class Settings:
     stripe_meter_event: str = "interview_credits"
     sandbox_backend: str = "local"
     sandbox_session_minutes: int = 60
+    supabase_url: str = ""
+    supabase_publishable_key: str = ""
+    realtime_enabled: bool = True
     ai_gateway_base_url: str = "https://ai-gateway.vercel.sh/v1"
     ai_gateway_model: str = "anthropic/claude-sonnet-5.5"
     ai_gateway_fallback_model: str = "google/gemini-2.5-flash"
@@ -177,6 +180,11 @@ def load_settings() -> Settings:
         stripe_meter_event=_env("STRIPE_METER_EVENT", defaults.stripe_meter_event),
         sandbox_backend=_env("SANDBOX_BACKEND", defaults.sandbox_backend).lower(),
         sandbox_session_minutes=_env_int("SANDBOX_SESSION_MINUTES", defaults.sandbox_session_minutes),
+        supabase_url=_first_env("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
+        supabase_publishable_key=_first_env(
+            "SUPABASE_PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"
+        ),
+        realtime_enabled=_env("REALTIME_ENABLED", "true").lower() not in ("0", "false", "no"),
         ai_gateway_base_url=_env("AI_GATEWAY_BASE_URL", defaults.ai_gateway_base_url),
         ai_gateway_model=_env("AI_GATEWAY_MODEL", defaults.ai_gateway_model),
         ai_gateway_fallback_model=_env("AI_GATEWAY_FALLBACK_MODEL", defaults.ai_gateway_fallback_model),

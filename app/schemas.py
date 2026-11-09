@@ -94,6 +94,36 @@ class FileOut(BaseModel):
     path: str
     content: str
     updated_at: str
+    version: int = 0
+
+
+class CollabUpdate(BaseModel):
+    clientID: str = Field(min_length=1, max_length=64)
+    changes: list[Any] = Field(max_length=20_000, description="CodeMirror ChangeSet.toJSON()")
+
+
+class CollabPush(BaseModel):
+    path: FilePath
+    version: int = Field(ge=0, description="Version the updates were made on (getSyncedVersion)")
+    updates: list[CollabUpdate] = Field(min_length=1, max_length=200)
+
+
+class CollabPushOut(BaseModel):
+    ok: bool
+    version: int
+
+
+class CollabPullOut(BaseModel):
+    version: int
+    updates: list[dict[str, Any]]
+    resync: bool = False
+    content: str | None = None
+
+
+class RealtimeConfig(BaseModel):
+    url: str
+    key: str
+    topic: str
 
 
 class FileUpsert(BaseModel):
@@ -151,6 +181,7 @@ class SessionState(BaseModel):
     runs: list[RunOut]
     cursor: int
     recording: RecordingOut | None = None
+    realtime: RealtimeConfig | None = None
 
 
 class JoinIn(BaseModel):

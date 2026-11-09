@@ -5,7 +5,7 @@
 ```text
 Company     → watchmecode.live/signup → "American Eagle" → ae.watchmecode.live (14-day trial)
 Interviewer → ae.watchmecode.live → Generate PIN for "Ada Lovelace" → 482913
-Candidate   → ae.watchmecode.live → 482913 → Join · edit main.py · ▶ Run · changes sync in ~1s
+Candidate   → ae.watchmecode.live → 482913 → Join · edit main.py · ▶ Run · keystrokes and cursors sync live
 ```
 
 ![The shared IDE](static/marketing/ide-dark.webp)
@@ -17,7 +17,8 @@ Candidate   → ae.watchmecode.live → 482913 → Join · edit main.py · ▶ R
 | Feature | Details |
 | --- | --- |
 | PIN sessions | Interviewers name a candidate and get a unique 6-digit PIN. Ending a session retires the PIN. |
-| Equal control | Explorer, tabs, editor, console, preview, and Run are shared. Edits sync in about a second. |
+| Equal control | Explorer, tabs, editor, console, preview, and Run are shared. |
+| Real co-editing | Both people can type on the same line at once. Edits merge keystroke by keystroke, and each side sees the other's named cursor and selection. |
 | 10 languages + web | Python, JavaScript, TypeScript, Java, C#, C++, C, Go, PHP, Shell, and an HTML/CSS/JS playground. |
 | Zero-setup imports | `import requests` or `require('lodash')` just works. Python and Node packages install on Run. |
 | Live refresh | Toggle it on and code re-runs a moment after you stop typing. |
@@ -181,7 +182,7 @@ flowchart LR
   api --> runner
 ```
 
-Both browsers poll `GET /api/sessions/{id}/changes?since=` every second. Vercel functions cannot hold WebSockets. More diagrams live in [docs/architecture.md](docs/architecture.md).
+Editors push keystroke-level change sets to `POST /api/sessions/{id}/collab`, and the server orders them into one history per file ([`@codemirror/collab`](https://codemirror.net/examples/collab/)). Vercel functions cannot hold WebSockets, so Supabase Realtime carries "new version" hints, presence, and cursors, and browsers pull from the API when hinted. Polling `GET /api/sessions/{id}/changes?since=` remains the fallback. More diagrams live in [docs/architecture.md](docs/architecture.md).
 
 ## Project layout
 

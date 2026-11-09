@@ -6,6 +6,7 @@
     "build": "esbuild editor-entry.js --bundle --format=esm --minify --target=es2020 --outfile=../static/vendor/codemirror.js"
   },
   "devDependencies": {
+    "@codemirror/collab": "^6.1.1",
     "@codemirror/lang-cpp": "^6.0.2",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-go": "^6.0.1",
@@ -21,6 +22,7 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "^6.36.5",
+    "@supabase/realtime-js": "^2.119.0",
     "codemirror": "^6.0.1",
     "esbuild": "^0.25.0"
   }

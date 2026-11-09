@@ -1,7 +1,9 @@
 // Single CodeMirror 6 bundle so every extension shares one @codemirror/state instance.
 export { EditorView, basicSetup } from "codemirror";
-export { EditorState, Compartment } from "@codemirror/state";
-export { keymap } from "@codemirror/view";
+export { EditorState, Compartment, StateEffect, StateField, ChangeSet } from "@codemirror/state";
+export { keymap, Decoration, WidgetType } from "@codemirror/view";
+export { collab, receiveUpdates, sendableUpdates, getSyncedVersion } from "@codemirror/collab";
+export { RealtimeClient } from "@supabase/realtime-js";
 export { undo, redo, selectAll, indentWithTab } from "@codemirror/commands";
 export { openSearchPanel } from "@codemirror/search";
 export { StreamLanguage } from "@codemirror/language";

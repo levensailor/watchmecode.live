@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from app.collab import ChangeSetError, apply_changes, normalize_newlines, replacement, utf16_length
 from app.config import PROJECT_ROOT, Settings
 from app.pins import generate_pin
 
@@ -50,7 +51,9 @@ LINK_COLUMNS = (
 TEMPLATE_COLUMNS = "id, org_id, name, description, language, files, time_limit_minutes, created_by, created_at, updated_at"
 SLUG_CHARS = re.compile(r"[^a-z0-9]+")
 RUN_COLUMNS = "id, entry_path, command, stdout, stderr, exit_code, duration_ms, created_at"
-FILE_COLUMNS = "id, path, content, updated_at"
+FILE_COLUMNS = "id, path, content, updated_at, version"
+COLLAB_HISTORY = 1000
+COLLAB_MAX_UNITS = 500_000
 RECORDING_COLUMNS = "id, session_id, created_by, started_at, ended_at, start_cursor, end_cursor, initial_files"
 PLAYBACK_KINDS_SQL = "'file_upsert', 'file_delete', 'file_rename', 'run'"
 
@@ -64,6 +67,10 @@ class RecordingConflictError(RuntimeError):
 
 
 class PathConflictError(ValueError):
+    pass
+
+
+class CollabConflictError(RuntimeError):
     pass
 
 
@@ -190,6 +197,8 @@ class Repository:
             if name not in existing:
                 raw.execute(f"ALTER TABLE sessions ADD COLUMN {name} {ddl}")
         raw.execute("CREATE INDEX IF NOT EXISTS sessions_org ON sessions (org_id, created_at)")
+        if "version" not in {row[1] for row in raw.execute("PRAGMA table_info(files)")}:
+            raw.execute("ALTER TABLE files ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
 
     # Events -----------------------------------------------------------------
 
@@ -445,17 +454,122 @@ class Repository:
             return c.all(sql, (session_id,))
 
     def upsert_file(self, session_id: str, path: str, content: str, actor: str, client_id: str | None) -> dict[str, Any]:
+        """Whole-file write. Existing files get a logged replacement so collab editors can rebase onto it."""
+        content = normalize_newlines(content)
         now = utcnow()
         with self.connect() as conn:
-            row = conn.one(
-                "INSERT INTO files (id, session_id, path, content, updated_at) VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT (session_id, path) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at "
-                f"RETURNING {FILE_COLUMNS}",
-                (uuid.uuid4().hex, session_id, path, content, now),
+            existing = conn.one(
+                f"SELECT {FILE_COLUMNS} FROM files WHERE session_id = ? AND path = ?", (session_id, path)
             )
+            if existing is None:
+                row = conn.one(
+                    "INSERT INTO files (id, session_id, path, content, updated_at, version) VALUES (?, ?, ?, ?, ?, 0) "
+                    f"RETURNING {FILE_COLUMNS}",
+                    (uuid.uuid4().hex, session_id, path, content, now),
+                )
+            elif existing["content"] == content:
+                row = existing
+            else:
+                version = int(existing["version"]) + 1
+                changes = replacement(normalize_newlines(existing["content"]), content)
+                updated = conn.run(
+                    "UPDATE files SET content = ?, version = ?, updated_at = ? WHERE id = ? AND version = ?",
+                    (content, version, now, existing["id"], existing["version"]),
+                )
+                if not updated:
+                    raise CollabConflictError("The file changed while saving. Try again.")
+                self._log_update(conn, session_id, path, version, client_id or "server", changes, now)
+                row = {**existing, "content": content, "version": version, "updated_at": now}
             assert row is not None
-            self._event(conn, session_id, "file_upsert", actor, client_id, path=path, data={"content": content})
+            self._event(
+                conn, session_id, "file_upsert", actor, client_id, path=path,
+                data={"content": content, "version": int(row["version"])},
+            )
         return row
+
+    # Collaborative editing (CodeMirror collab) ----------------------------------
+
+    def _log_update(
+        self, conn: _Conn, session_id: str, path: str, version: int, client_id: str, changes: Any, now: str
+    ) -> None:
+        conn.run(
+            "INSERT INTO doc_updates (session_id, path, version, client_id, changes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, path, version, client_id, json.dumps(changes, separators=(",", ":")), now),
+        )
+        conn.run(
+            "DELETE FROM doc_updates WHERE session_id = ? AND path = ? AND version <= ?",
+            (session_id, path, version - COLLAB_HISTORY),
+        )
+
+    def collab_push(
+        self,
+        session_id: str,
+        path: str,
+        base_version: int,
+        updates: list[dict[str, Any]],
+        actor: str,
+        client_id: str | None,
+    ) -> dict[str, Any]:
+        """Apply `updates` made on top of `base_version`. Returns {"ok", "version"}; ok is False when the
+        client is behind and must pull, rebase, and push again."""
+        now = utcnow()
+        with self.connect() as conn:
+            row = conn.one(f"SELECT {FILE_COLUMNS} FROM files WHERE session_id = ? AND path = ?", (session_id, path))
+            if row is None:
+                raise FileNotFoundError(path)
+            current = int(row["version"])
+            if base_version != current:
+                return {"ok": False, "version": current}
+            content = normalize_newlines(row["content"])
+            version = current
+            for update in updates:
+                content = apply_changes(content, update["changes"])
+            if utf16_length(content) > COLLAB_MAX_UNITS:
+                raise ChangeSetError("The file is too large")
+            try:
+                for update in updates:
+                    version += 1
+                    self._log_update(conn, session_id, path, version, str(update["clientID"]), update["changes"], now)
+                updated = conn.run(
+                    "UPDATE files SET content = ?, version = ?, updated_at = ? WHERE id = ? AND version = ?",
+                    (content, version, now, row["id"], current),
+                )
+            except self._integrity_errors:
+                updated = 0
+            if not updated:
+                # Another push won the race for this version; the client pulls, rebases, and retries.
+                conn.raw.rollback()
+                return {"ok": False, "version": current + 1}
+            self._event(
+                conn, session_id, "file_upsert", actor, client_id, path=path,
+                data={"content": content, "version": version},
+            )
+        return {"ok": True, "version": version}
+
+    def collab_pull(self, session_id: str, path: str, since: int, limit: int = 500) -> dict[str, Any]:
+        """Updates after `since`, or the whole document when the client is too far behind to catch up."""
+        with self.connect() as conn:
+            row = conn.one(f"SELECT {FILE_COLUMNS} FROM files WHERE session_id = ? AND path = ?", (session_id, path))
+            if row is None:
+                raise FileNotFoundError(path)
+            current = int(row["version"])
+            # Bounded by `current` so a push committing between these two reads can't leave a gap.
+            rows = conn.all(
+                "SELECT version, client_id, changes FROM doc_updates WHERE session_id = ? AND path = ? "
+                "AND version > ? AND version <= ? ORDER BY version LIMIT ?",
+                (session_id, path, since, current, limit + 1),
+            ) if 0 <= since <= current else []
+        contiguous = len(rows) == current - since and (not rows or int(rows[0]["version"]) == since + 1)
+        if since > current or since < 0 or not contiguous or len(rows) > limit:
+            return {"version": current, "updates": [], "resync": True, "content": normalize_newlines(row["content"])}
+        return {
+            "version": current,
+            "updates": [
+                {"version": int(r["version"]), "clientID": r["client_id"], "changes": json.loads(r["changes"])}
+                for r in rows
+            ],
+            "resync": False,
+        }
 
     @staticmethod
     def _matching(files: list[dict[str, Any]], path: str) -> list[str]:
@@ -467,6 +581,7 @@ class Repository:
             targets = self._matching(self.list_files(session_id, conn), path)
             for target in targets:
                 conn.run("DELETE FROM files WHERE session_id = ? AND path = ?", (session_id, target))
+                conn.run("DELETE FROM doc_updates WHERE session_id = ? AND path = ?", (session_id, target))
             if targets:
                 self._event(conn, session_id, "file_delete", actor, client_id, path=path, data={"paths": targets})
         return targets
@@ -487,6 +602,7 @@ class Repository:
                     "UPDATE files SET path = ?, updated_at = ? WHERE session_id = ? AND path = ?",
                     (dest, now, session_id, src),
                 )
+                conn.run("UPDATE doc_updates SET path = ? WHERE session_id = ? AND path = ?", (dest, session_id, src))
             self._event(conn, session_id, "file_rename", actor, client_id, path=old, data={"mapping": mapping})
         return mapping
 

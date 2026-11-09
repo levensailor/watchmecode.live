@@ -26,6 +26,19 @@ CREATE TABLE IF NOT EXISTS files (
     UNIQUE (session_id, path)
 );
 
+ALTER TABLE files ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0;
+
+-- CodeMirror collab change sets (UTF-16 offsets) that took each file from version - 1 to version.
+CREATE TABLE IF NOT EXISTS doc_updates (
+    session_id TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+    path       TEXT NOT NULL,
+    version    INTEGER NOT NULL,
+    client_id  TEXT NOT NULL,
+    changes    TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, path, version)
+);
+
 CREATE TABLE IF NOT EXISTS runs (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     session_id  TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
@@ -166,3 +179,4 @@ ALTER TABLE files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recordings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE doc_updates ENABLE ROW LEVEL SECURITY;

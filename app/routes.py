@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -22,10 +24,21 @@ from app.integrations import hooks
 from app.tenancy import apex_url, current_site, current_tenant
 from app.labs import prompt_lab
 from app.languages import LANGUAGES, LanguageId, language_for_path
-from app.repository import PathConflictError, PinExhaustedError, RecordingConflictError, Repository, utcnow
+from app.collab import ChangeSetError
+from app.repository import (
+    CollabConflictError,
+    PathConflictError,
+    PinExhaustedError,
+    RecordingConflictError,
+    Repository,
+    utcnow,
+)
 from app.results import build_zip, zip_filename
 from app.runner import CodeRunner
 from app.schemas import (
+    CollabPullOut,
+    CollabPush,
+    CollabPushOut,
     AppInfoOut,
     ChangesOut,
     DeleteOut,
@@ -335,7 +348,51 @@ def session_state(
         "runs": list(reversed(repo.list_runs(session_id, limit=20))),
         "cursor": cursor,
         "recording": repo.active_recording(session_id),
+        "realtime": realtime_config(request.app.state.settings, session_id),
     }
+
+
+def realtime_config(settings, session_id: str) -> dict | None:
+    """Supabase Realtime channel for change hints and presence. The topic is an HMAC of the workspace and
+    session, so only participants who can load the session learn it; it never carries file content."""
+    if not (settings.realtime_enabled and settings.supabase_url and settings.supabase_publishable_key):
+        return None
+    tenant = current_tenant.get()
+    scope = f"realtime|{tenant['slug'] if tenant else settings.tenant_slug}|{session_id}"
+    digest = hmac.new(settings.session_secret.encode(), scope.encode(), hashlib.sha256).hexdigest()[:32]
+    return {"url": settings.supabase_url.rstrip("/"), "key": settings.supabase_publishable_key, "topic": f"wmc-{digest}"}
+
+
+@router.get("/api/sessions/{session_id}/collab", response_model=CollabPullOut, tags=["shared"])
+def collab_pull(
+    session_id: str,
+    path: Annotated[FilePath, Query()],
+    since: Annotated[int, Query(ge=0)],
+    _: Participant = Depends(participant),
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    try:
+        return repo.collab_pull(session_id, path, since)
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "File not found") from exc
+
+
+@router.post("/api/sessions/{session_id}/collab", response_model=CollabPushOut, tags=["shared"])
+def collab_push(
+    session_id: str,
+    body: CollabPush,
+    client_id: ClientId = None,
+    who: Participant = Depends(participant),
+    repo: Repository = Depends(get_repo),
+) -> dict:
+    """Apply CodeMirror collab updates made at `version`. `ok: false` means pull, rebase, and push again."""
+    updates = [u.model_dump() for u in body.updates]
+    try:
+        return repo.collab_push(session_id, body.path, body.version, updates, who.label, client_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "File not found") from exc
+    except ChangeSetError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
 
 @router.get("/api/sessions/{session_id}/files", response_model=list[FileOut], tags=["shared"])
@@ -351,7 +408,10 @@ def upsert_file(
     who: Participant = Depends(participant),
     repo: Repository = Depends(get_repo),
 ) -> dict:
-    return repo.upsert_file(session_id, body.path, body.content, who.label, client_id)
+    try:
+        return repo.upsert_file(session_id, body.path, body.content, who.label, client_id)
+    except CollabConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
 
 @router.delete("/api/sessions/{session_id}/files", response_model=DeleteOut, tags=["shared"])

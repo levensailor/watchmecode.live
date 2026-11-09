@@ -2,6 +2,10 @@
 
 Feature changes, newest first. Times are America/New_York.
 
+## 2026-11-09
+
+- **10:30** Co-edit in real time: keystroke-level change sets rebase over each other with `@codemirror/collab`, so two people can type on the same line without losing edits, and Supabase Realtime delivers change hints, presence avatars, and named remote cursors, with polling as the fallback.
+
 ## 2026-11-07
 
 - **10:40** Add a board review and business plan (`docs/strategy/board-review.md`): five advisors debate demand, market size, competition, pricing, unit economics, scalability, and security, vote to improve before pursuing, and lay out the beachhead, pricing changes, milestones, financial model, hiring plan, compliance roadmap, and risk register.

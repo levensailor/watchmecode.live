@@ -21,7 +21,19 @@ CREATE TABLE IF NOT EXISTS files (
     path       TEXT NOT NULL,
     content    TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL,
+    version    INTEGER NOT NULL DEFAULT 0,
     UNIQUE (session_id, path)
+);
+
+-- CodeMirror collab change sets (UTF-16 offsets) that took each file from version - 1 to version.
+CREATE TABLE IF NOT EXISTS doc_updates (
+    session_id TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+    path       TEXT NOT NULL,
+    version    INTEGER NOT NULL,
+    client_id  TEXT NOT NULL,
+    changes    TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, path, version)
 );
 
 CREATE TABLE IF NOT EXISTS runs (
