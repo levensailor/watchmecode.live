@@ -168,6 +168,21 @@ CREATE TABLE IF NOT EXISTS assessment_templates (
 
 CREATE INDEX IF NOT EXISTS assessment_templates_org ON assessment_templates (org_id, name);
 
+CREATE TABLE IF NOT EXISTS problem_cache (
+    slug       TEXT NOT NULL,
+    language   TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    summary    TEXT NOT NULL DEFAULT '',
+    files      TEXT NOT NULL,
+    notes      TEXT NOT NULL DEFAULT '{}',
+    model      TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (slug, language)
+);
+
+CREATE INDEX IF NOT EXISTS problem_cache_creator ON problem_cache (created_by, created_at);
+
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE org_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
@@ -180,3 +195,4 @@ ALTER TABLE runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recordings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE doc_updates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE problem_cache ENABLE ROW LEVEL SECURITY;

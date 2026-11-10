@@ -9,11 +9,10 @@ import re
 import time
 from typing import Any
 
-import httpx
 from fastapi import FastAPI
 
+from app.ai_gateway import GatewayNoResponse, GatewayNotConfigured, GatewayUnavailable, complete_json
 from app.config import Settings
-from app.integrations.http import make_client
 from app.runner import RunResult
 
 logger = logging.getLogger(__name__)
@@ -23,7 +22,6 @@ MAX_PROMPT_CHARS = 12_000
 MAX_BRIEF_CHARS = 8_000
 MAX_CONTEXT_FILES_CHARS = 12_000
 MAX_OUTPUT_TOKENS = 8000
-MODEL_UNAVAILABLE = {403, 404}
 DIMENSIONS = (("intent", "Intent"), ("guardrails", "Guardrails"), ("context", "Context & integrations"))
 
 SYSTEM_PROMPT = """You evaluate prompts that engineering candidates write for AI coding agents ("vibe coding").
@@ -100,20 +98,6 @@ RESPONSE_SCHEMA: dict[str, Any] = {
 
 class PromptLabError(RuntimeError):
     """A failure the candidate or interviewer can act on; the message is shown in the console."""
-
-
-def gateway_token(settings: Settings) -> str:
-    """AI_GATEWAY_API_KEY if set, else the Vercel OIDC token (automatic on Vercel, `vercel env pull` locally)."""
-    if settings.ai_gateway_api_key:
-        return settings.ai_gateway_api_key
-    try:
-        from vercel.oidc import get_vercel_oidc_token_sync
-
-        return get_vercel_oidc_token_sync()
-    except Exception as exc:
-        raise PromptLabError(
-            "The AI reviewer isn't configured on this server (no AI Gateway key or Vercel OIDC token)."
-        ) from exc
 
 
 def _section(text: str, limit: int) -> str:
@@ -207,43 +191,26 @@ def review_prompt(app: FastAPI, entry_path: str, files: dict[str, str]) -> RunRe
         path: content for path, content in files.items() if path != entry_path and path not in BRIEF_FILES
     }
     messages = build_messages(brief, prompt, context_files)
-    models = [m for m in dict.fromkeys((settings.ai_gateway_model, settings.ai_gateway_fallback_model)) if m]
     try:
-        token = gateway_token(settings)
-        with make_client(
+        completion = complete_json(
             settings,
             getattr(app.state, "http_transport", None),
-            base_url=settings.ai_gateway_base_url,
-            headers={"Authorization": f"Bearer {token}"},
-        ) as client:
-            for index, model_id in enumerate(models):
-                payload = {
-                    "model": model_id,
-                    "messages": messages,
-                    "max_tokens": MAX_OUTPUT_TOKENS,
-                    "reasoning_effort": "low",
-                    "response_format": {"type": "json_schema", "json_schema": {"name": "prompt_review", "schema": RESPONSE_SCHEMA}},
-                }
-                response = client.post("/chat/completions", json=payload, timeout=settings.ai_review_timeout_seconds)
-                if response.status_code in MODEL_UNAVAILABLE and index + 1 < len(models):
-                    logger.info("Model %s unavailable (%s); falling back", model_id, response.status_code)
-                    continue
-                break
-        if response.status_code >= 400:
-            message = (response.json().get("error") or {}).get("message") if response.content else None
-            logger.warning("AI Gateway returned %s: %s", response.status_code, message)
-            raise PromptLabError(f"The AI reviewer is unavailable right now ({response.status_code}). Try again shortly.")
-        body = response.json()
-        choice = body["choices"][0]
-        if choice.get("finish_reason") == "length":
-            logger.warning("Prompt review hit the output limit with %s", body.get("model"))
-        review = parse_review(choice["message"]["content"] or "")
+            messages,
+            schema_name="prompt_review",
+            schema=RESPONSE_SCHEMA,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            timeout=settings.ai_review_timeout_seconds,
+        )
+        review = parse_review(completion.content)
+    except GatewayNotConfigured:
+        return result("", "The AI reviewer isn't configured on this server (no AI Gateway key or Vercel OIDC token).\n", 1)
+    except GatewayUnavailable as exc:
+        return result("", f"The AI reviewer is unavailable right now ({exc.status}). Try again shortly.\n", 1)
+    except GatewayNoResponse:
+        return result("", "The AI reviewer didn't respond in time. Press Run to try again.\n", 1)
     except PromptLabError as exc:
         return result("", f"{exc}\n", 1)
-    except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
-        logger.warning("Prompt review failed: %s", exc.__class__.__name__)
-        return result("", "The AI reviewer didn't respond in time. Press Run to try again.\n", 1)
-    model = body.get("model") or settings.ai_gateway_model
-    usage = body.get("usage") or {}
-    logger.info("Prompt review %s/10 with %s (%s tokens)", review.get("overall"), model, usage.get("total_tokens"))
-    return result(render(review, model), "[Reviewed by an AI agent through Vercel AI Gateway.]\n", 0)
+    logger.info(
+        "Prompt review %s/10 with %s (%s tokens)", review.get("overall"), completion.model, completion.usage.get("total_tokens")
+    )
+    return result(render(review, completion.model), "[Reviewed by an AI agent through Vercel AI Gateway.]\n", 0)

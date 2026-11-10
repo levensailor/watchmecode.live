@@ -24,6 +24,8 @@ from app.integrations import hooks
 from app.tenancy import apex_url, current_site, current_tenant
 from app.labs import prompt_lab
 from app.languages import LANGUAGES, LanguageId, language_for_path
+from app.problems.generate import PROBLEM_LANGUAGES
+from app.problems.routes import problem_for_session
 from app.collab import ChangeSetError
 from app.repository import (
     CollabConflictError,
@@ -163,7 +165,10 @@ def workspace_brief(request: Request) -> dict | None:
 @router.get("/api/languages", response_model=list[LanguageOut], tags=["meta"])
 def list_languages() -> list[LanguageOut]:
     return [
-        LanguageOut(id=lang.id, label=lang.label, entry=lang.entry, extensions=list(lang.extensions))
+        LanguageOut(
+            id=lang.id, label=lang.label, entry=lang.entry, extensions=list(lang.extensions),
+            problems=lang.id in PROBLEM_LANGUAGES,
+        )
         for lang in LANGUAGES.values()
     ]
 
@@ -185,9 +190,13 @@ def create_session(
     plans.check_language(request.app.state.settings, language.id.value)
     if body.org_id and repo.member_role(body.org_id, user["email"]) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Organization not found")
+    files, title = dict(language.starter), None
+    if body.problem:
+        problem = problem_for_session(request, repo, user, body.problem, language.id)
+        files, title = dict(problem["files"]), problem["name"]
     try:
         return repo.create_session(
-            body.candidate_name.strip(), user["email"], language.id.value, dict(language.starter), org_id=body.org_id
+            body.candidate_name.strip(), user["email"], language.id.value, files, org_id=body.org_id, title=title
         )
     except PinExhaustedError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc

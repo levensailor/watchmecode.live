@@ -40,7 +40,7 @@ class Settings:
     app_author: str = "levensailor"
     public_url: str = ""
     contact_url: str = "https://github.com/levensailor/watchmecode.live/issues"
-    legal_updated: str = "November 6, 2026"
+    legal_updated: str = "November 10, 2026"
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = ""
@@ -95,6 +95,11 @@ class Settings:
     ai_gateway_fallback_model: str = "google/gemini-2.5-flash"
     ai_gateway_api_key: str = ""
     ai_review_timeout_seconds: float = 50.0
+    problems_repo: str = "liquidslr/leetcode-company-wise-problems"
+    problems_ref: str = "main"
+    problems_listing_url: str = "https://data.jsdelivr.com/v1/packages/gh"
+    problems_raw_url: str = "https://raw.githubusercontent.com"
+    problem_generations_per_hour: int = 20
     vercel_token: str = ""
     vercel_team_id: str = ""
     vercel_project_id: str = ""
@@ -190,6 +195,11 @@ def load_settings() -> Settings:
         ai_gateway_fallback_model=_env("AI_GATEWAY_FALLBACK_MODEL", defaults.ai_gateway_fallback_model),
         ai_gateway_api_key=_env("AI_GATEWAY_API_KEY"),
         ai_review_timeout_seconds=float(_env("AI_REVIEW_TIMEOUT_SECONDS") or defaults.ai_review_timeout_seconds),
+        problems_repo=_env("PROBLEMS_REPO", defaults.problems_repo),
+        problems_ref=_env("PROBLEMS_REF", defaults.problems_ref),
+        problems_listing_url=_env("PROBLEMS_LISTING_URL", defaults.problems_listing_url).rstrip("/"),
+        problems_raw_url=_env("PROBLEMS_RAW_URL", defaults.problems_raw_url).rstrip("/"),
+        problem_generations_per_hour=_env_int("PROBLEM_GENERATIONS_PER_HOUR", defaults.problem_generations_per_hour),
         vercel_token=_env("VERCEL_TOKEN"),
         vercel_team_id=_env("VERCEL_TEAM_ID"),
         vercel_project_id=_env("VERCEL_PROJECT_ID"),

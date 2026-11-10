@@ -2,6 +2,10 @@
 
 Feature changes, newest first. Times are America/New_York.
 
+## 2026-11-10
+
+- **11:45** Start sessions from company-tagged interview problems: browse 470 companies' lists by time window, difficulty, and topic in the New session form, and the AI writes an original problem with a starter stub, sample tests, and interviewer-only notes that load as the session's starter files.
+
 ## 2026-11-09
 
 - **10:30** Co-edit in real time: keystroke-level change sets rebase over each other with `@codemirror/collab`, so two people can type on the same line without losing edits, and Supabase Realtime delivers change hints, presence avatars, and named remote cursors, with polling as the fallback.

@@ -9,12 +9,16 @@ Candidates join with a 6-digit PIN or a signed invite link. They don't need an a
 *Visual:* `join.webp`, the join tile with a PIN entered.
 
 ### A shared IDE in real time
-Interviewer and candidate share the explorer, tabs, editor, console, and preview with equal control. Edits sync in about a second, and both sides see who changed what.
+Interviewer and candidate share the explorer, tabs, editor, console, and preview with equal control. Both can type on the same line at once; edits merge keystroke by keystroke, and each side sees the other's named cursor.
 *Visual:* `ide-light.webp` / `ide-dark.webp`, plus `sync.gif` (two browsers editing the same file).
 
 ### 10 languages plus a web playground
 Python, JavaScript, TypeScript, Java, C#, C++, C, Go, PHP, and Shell, plus an HTML/CSS/JS playground with a sandboxed live preview. `console.log` output from the preview shows up in the console.
 *Visual:* `preview.webp`, a web session with the rendered preview.
+
+### Company problems, rewritten for your interview
+Pick a company and a time window (last 30 days, 3 months, 6 months, older, or all time) to see the problems it has asked, filtered by difficulty and topic and ranked by how often they come up. Preview one and an AI writes an original version in your session's language: a fresh name and story, a starter stub, sample tests that print pass or fail, and interviewer-only notes with the intended approach, target complexity, hints, follow-ups, and pitfalls. Candidates never see the company or the original title, so the answer isn't one search away. Each problem is written once per workspace and reused after that.
+*Visual:* the New session form's problem browser with a preview open.
 
 ### Run with automatic installs
 Write `import requests` or `require('lodash')` and press Run. Packages install on demand, so nobody loses five minutes to environment setup.

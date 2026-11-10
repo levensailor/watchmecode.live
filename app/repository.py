@@ -49,6 +49,7 @@ LINK_COLUMNS = (
     "data, created_at, updated_at"
 )
 TEMPLATE_COLUMNS = "id, org_id, name, description, language, files, time_limit_minutes, created_by, created_at, updated_at"
+PROBLEM_COLUMNS = "slug, language, name, summary, files, notes, model, created_by, created_at"
 SLUG_CHARS = re.compile(r"[^a-z0-9]+")
 RUN_COLUMNS = "id, entry_path, command, stdout, stderr, exit_code, duration_ms, created_at"
 FILE_COLUMNS = "id, path, content, updated_at, version"
@@ -954,3 +955,42 @@ class Repository:
     def delete_template(self, org_id: str, template_id: str) -> bool:
         with self.connect() as conn:
             return conn.run("DELETE FROM assessment_templates WHERE id = ? AND org_id = ?", (template_id, org_id)) > 0
+
+    # Company problem library ---------------------------------------------------
+
+    def get_cached_problem(self, slug: str, language: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.one(f"SELECT {PROBLEM_COLUMNS} FROM problem_cache WHERE slug = ? AND language = ?", (slug, language))
+        if row is not None:
+            row["files"] = json.loads(row["files"] or "{}")
+            row["notes"] = json.loads(row["notes"] or "{}")
+        return row
+
+    def save_cached_problem(
+        self,
+        slug: str,
+        language: str,
+        name: str,
+        summary: str,
+        files: dict[str, str],
+        notes: dict[str, Any],
+        model: str,
+        actor: str,
+    ) -> dict[str, Any]:
+        """Keeps the first copy when two interviewers generate the same problem at once."""
+        with self.connect() as conn:
+            conn.run(
+                f"INSERT INTO problem_cache ({PROBLEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT (slug, language) DO NOTHING",
+                (slug, language, name, summary, json.dumps(files), json.dumps(notes), model, actor, utcnow()),
+            )
+        cached = self.get_cached_problem(slug, language)
+        assert cached is not None
+        return cached
+
+    def count_problem_generations(self, actor: str, since: str) -> int:
+        with self.connect() as conn:
+            row = conn.one(
+                "SELECT COUNT(*) AS n FROM problem_cache WHERE created_by = ? AND created_at >= ?", (actor, since)
+            )
+        return int(row["n"]) if row else 0

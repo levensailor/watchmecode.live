@@ -147,8 +147,22 @@
             <label for="org-select">Organization</label>
             <select class="input" id="org-select"></select>
           </div>
+          <div class="field problem-field" id="problem-field" role="group" aria-labelledby="problem-field-label">
+            <span class="caption" id="problem-field-label">Problem (optional)</span>
+            <div class="problem-pick">
+              <button class="btn" type="button" id="problem-browse">Browse company problems</button>
+              <span class="problem-chip" id="problem-chip" hidden>
+                <span id="problem-chip-text"></span>
+                <button type="button" class="chip-x" id="problem-clear" aria-label="Remove problem">×</button>
+              </span>
+            </div>
+            <span class="caption" id="problem-chip-note" hidden></span>
+          </div>
           <button class="btn btn-primary" type="submit" id="create-btn">Generate PIN</button>
           <div class="error" id="create-error" role="alert"></div>
+          <div class="row" id="create-fallback" hidden>
+            <button class="btn btn-sm" type="button" id="create-plain">Use the plain starter instead</button>
+          </div>
           <div class="pin-result" id="pin-result" hidden>
             <span class="caption">Share this PIN with <strong id="pin-result-name"></strong></span>
             <div class="row">
@@ -316,6 +330,59 @@
       <h3 id="info-title"></h3>
       <div id="info-body"></div>
       <form method="dialog" class="row"><button class="btn btn-primary">Close</button></form>
+    </dialog>
+
+    <dialog id="problem-dialog" class="problem-dialog" aria-labelledby="problem-dialog-title">
+      <div class="problem-head">
+        <div>
+          <h3 id="problem-dialog-title">Company problems</h3>
+          <span class="caption">Problems companies have asked recently. The AI writes an original version for your interview.</span>
+        </div>
+        <button class="icon-btn" type="button" id="problem-close" aria-label="Close">✕</button>
+      </div>
+      <div class="problem-filters">
+        <div class="field">
+          <label for="problem-company">Company</label>
+          <input class="input" id="problem-company" list="problem-companies" placeholder="e.g. Google" autocomplete="off" />
+          <datalist id="problem-companies"></datalist>
+        </div>
+        <div class="field">
+          <label for="problem-window">Asked in</label>
+          <select class="input" id="problem-window" disabled></select>
+        </div>
+        <div class="field">
+          <label for="problem-search">Search</label>
+          <input class="input" id="problem-search" type="search" placeholder="Title" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="problem-topic">Topic</label>
+          <select class="input" id="problem-topic"></select>
+        </div>
+        <div class="field">
+          <span class="caption">Difficulty</span>
+          <div class="seg" id="problem-difficulty" role="group" aria-label="Difficulty">
+            <button type="button" data-difficulty="Easy" aria-pressed="false">Easy</button>
+            <button type="button" data-difficulty="Medium" aria-pressed="false">Medium</button>
+            <button type="button" data-difficulty="Hard" aria-pressed="false">Hard</button>
+          </div>
+        </div>
+      </div>
+      <div class="problem-body">
+        <div class="problem-results">
+          <div class="caption" id="problem-count" role="status"></div>
+          <ul class="problem-list" id="problem-list"></ul>
+          <div class="problem-pager" id="problem-pager" hidden>
+            <button class="btn btn-sm" type="button" id="problem-prev">Previous</button>
+            <span class="caption" id="problem-page"></span>
+            <button class="btn btn-sm" type="button" id="problem-next">Next</button>
+          </div>
+        </div>
+        <div class="problem-preview" id="problem-preview" aria-live="polite"></div>
+      </div>
+      <p class="caption problem-source">
+        Problem lists from <a id="problem-source" target="_blank" rel="noopener">a public repository</a>.
+        Candidates never see the company or the original title.
+      </p>
     </dialog>
 
     <div class="toast" id="toast" role="status" hidden></div>

@@ -19,6 +19,8 @@ from app.config import PROJECT_ROOT, Settings, get_settings
 from app.crypto import Vault
 from app.integrations import ashby, modernloop
 from app.logging_config import setup_logging
+from app.problems import routes as problem_routes
+from app.problems.catalog import Catalog
 from app.repository import Repository
 from app.runner import CodeRunner
 from app.sandbox_runner import SandboxRunner
@@ -74,6 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.runner = SandboxRunner(settings, local_runner) if settings.sandbox_backend == "sandbox" else local_runner
     app.state.vault = Vault(settings)
     app.state.http_transport = None
+    app.state.problem_catalog = Catalog(settings)
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
@@ -102,6 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ashby.partner_router)
     app.include_router(modernloop.router)
     app.include_router(platform_api.router)
+    app.include_router(problem_routes.router)
     app.include_router(site.router)
 
     @app.get("/api/health", tags=["meta"])

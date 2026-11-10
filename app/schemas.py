@@ -40,6 +40,7 @@ class LanguageOut(BaseModel):
     label: str
     entry: str
     extensions: list[str]
+    problems: bool = Field(default=False, description="Company problems can start a session in this language")
 
 
 class AppInfoOut(BaseModel):
@@ -54,10 +55,74 @@ class AppInfoOut(BaseModel):
 SessionMode = Literal["live", "take_home"]
 
 
+class ProblemRef(BaseModel):
+    """A problem on a company's list; the server re-reads the list to confirm it."""
+
+    company: str = Field(min_length=1, max_length=120)
+    window: str = Field(min_length=1, max_length=40, pattern=r"^[a-z-]+$")
+    slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+class ProblemGenerate(ProblemRef):
+    language: LanguageId = LanguageId.python
+
+
+class ProblemWindowOut(BaseModel):
+    id: str
+    label: str
+
+
+class ProblemCompanyOut(BaseModel):
+    name: str
+    windows: list[ProblemWindowOut]
+
+
+class ProblemRow(BaseModel):
+    slug: str
+    title: str
+    difficulty: Literal["Easy", "Medium", "Hard"]
+    frequency: float
+    acceptance: float | None = None
+    topics: list[str] = Field(default_factory=list)
+
+
+class ProblemCatalogOut(BaseModel):
+    source_url: str
+    companies: list[ProblemCompanyOut]
+    languages: list[LanguageId]
+
+
+class ProblemListOut(BaseModel):
+    company: str
+    window: str
+    problems: list[ProblemRow]
+
+
+class ProblemNotes(BaseModel):
+    approach: str = ""
+    complexity: str = ""
+    hints: list[str] = Field(default_factory=list)
+    follow_ups: list[str] = Field(default_factory=list)
+    pitfalls: list[str] = Field(default_factory=list)
+
+
+class ProblemOut(BaseModel):
+    """Interviewer preview: the candidate's files plus notes that never reach the candidate."""
+
+    name: str
+    summary: str = ""
+    language: LanguageId
+    files: dict[str, str]
+    notes: ProblemNotes
+    source: ProblemRow
+    cached: bool
+
+
 class SessionCreate(BaseModel):
     candidate_name: str = Field(min_length=1, max_length=80, description="Candidate's display name")
     language: LanguageId = Field(default=LanguageId.python, description="Starter language")
     org_id: str | None = Field(default=None, max_length=64, description="Organization that owns the session")
+    problem: ProblemRef | None = Field(default=None, description="Start from an AI-written version of a company problem")
 
 
 class SessionOut(BaseModel):

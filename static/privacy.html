@@ -48,14 +48,14 @@
         <p>We don't sell your data, show ads, or use session content to train models.</p>
 
         <h2>Cookies and local storage</h2>
-        <p>We use one signed session cookie to keep interviewers signed in. Your browser's local storage holds your theme preference, the Live refresh setting, and a candidate's session access token. We don't use tracking or advertising cookies.</p>
+        <p>We use one signed session cookie to keep interviewers signed in. Your browser's local storage holds your theme preference, the Live refresh setting, the last company you browsed for problems, and a candidate's session access token. We don't use tracking or advertising cookies.</p>
 
         <h2>Where data is stored</h2>
         <p>The app runs on Vercel in the United States (us-east). Data is stored in a Supabase Postgres database, with each workspace in its own schema; Enterprise workspaces can run on a dedicated deployment and database. Code runs in temporary server workspaces, or in isolated Vercel Sandbox virtual machines that are stopped when the session ends.</p>
 
         <h2>Service providers</h2>
         <ul>
-          <li><strong>Vercel</strong>: hosting, logs, and code sandboxes.</li>
+          <li><strong>Vercel</strong>: hosting, logs, code sandboxes, and AI Gateway. AI Gateway passes prompt-lab submissions, and the title, difficulty, and topics of a company problem an interviewer previews, to the AI model provider. Company problems send no candidate or session data.</li>
           <li><strong>Stripe</strong>: subscriptions, payments, and invoices.</li>
           <li><strong>Supabase</strong>: database.</li>
           <li><strong>Google</strong>: interviewer sign-in.</li>

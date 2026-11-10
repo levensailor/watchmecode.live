@@ -159,3 +159,18 @@ CREATE TABLE IF NOT EXISTS assessment_templates (
 );
 
 CREATE INDEX IF NOT EXISTS assessment_templates_org ON assessment_templates (org_id, name);
+
+CREATE TABLE IF NOT EXISTS problem_cache (
+    slug       TEXT NOT NULL,
+    language   TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    summary    TEXT NOT NULL DEFAULT '',
+    files      TEXT NOT NULL,
+    notes      TEXT NOT NULL DEFAULT '{}',
+    model      TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (slug, language)
+);
+
+CREATE INDEX IF NOT EXISTS problem_cache_creator ON problem_cache (created_by, created_at);

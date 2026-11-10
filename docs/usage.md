@@ -8,6 +8,10 @@
 4. Share the PIN, then click **Open IDE**.
 5. After the interview, press **End** in the portal. The PIN stops working, and the session stays available for review.
 
+### Company problems
+
+For a code language, **New session** has **Browse company problems**. Type a company, pick when it asked the problems (last 30 days through all time), and narrow by difficulty, topic, or title. Click a problem to preview an original version the AI writes for your interview: what the candidate sees (the statement and a starter file with sample tests) and notes only you see (the intended approach, target complexity, hints, follow-ups, and pitfalls). Press **Use this problem**, then **Generate PIN**. The candidate's files never mention the company or the original title. Each problem is written once per workspace, so the next preview is instant.
+
 The portal groups sessions by candidate name. **Open** loads any session's files and run history, before or after the interview.
 
 ### Organizations and integrations

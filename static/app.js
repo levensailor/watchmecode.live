@@ -19,9 +19,16 @@ const HINT_THROTTLE_MS = 150;
 const PRESENCE_COLORS = ["#6e56cf", "#e5484d", "#30a46c", "#f76b15", "#0090ff", "#d6409f", "#12a594", "#ab4aba"];
 const LIVE_DEBOUNCE_MS = 1200;
 const KEEP_FILE = ".keep";
+const PROBLEM_FILE = "PROBLEM.md";
 const NOTE_LINE = /^\[(Installing|HTML|uv|pip|npm)[^\]]*\]$/;
 const CLIENT_ID = crypto.randomUUID();
-const STORAGE = { theme: "wmc:theme", live: "wmc:live", org: "wmc:org", token: (id) => `wmc:token:${id}` };
+const STORAGE = {
+  theme: "wmc:theme",
+  live: "wmc:live",
+  org: "wmc:org",
+  problemCompany: "wmc:problem-company",
+  token: (id) => `wmc:token:${id}`,
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -408,6 +415,377 @@ async function endSession(session) {
   }
 }
 
+/* Company problem library ------------------------------------------------------------ */
+
+function escapeHtml(text) {
+  return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+function inlineMarkdown(text) {
+  return escapeHtml(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>");
+}
+
+// A small Markdown subset (headings, lists, code, emphasis). Text is escaped before any markup is added.
+function renderMarkdown(markdown) {
+  const out = [];
+  const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+  let paragraph = [];
+  let list = null;
+  const flushParagraph = () => {
+    if (paragraph.length) out.push(`<p>${inlineMarkdown(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (list) out.push(`<${list.tag}>${list.items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</${list.tag}>`);
+    list = null;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      flushParagraph();
+      flushList();
+      const code = [];
+      while (++i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i]);
+      out.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+      continue;
+    }
+    const heading = line.match(/^(#{1,4})\s+(.*)$/);
+    const item = line.match(/^\s*(?:([-*])|\d+\.)\s+(.*)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const level = Math.min(6, heading[1].length + 2);
+      out.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+    } else if (/^\s*-{3,}\s*$/.test(line)) {
+      flushParagraph();
+      flushList();
+      out.push("<hr>");
+    } else if (item) {
+      flushParagraph();
+      const tag = item[1] ? "ul" : "ol";
+      if (list?.tag !== tag) {
+        flushList();
+        list = { tag, items: [] };
+      }
+      list.items.push(item[2]);
+    } else if (!line.trim()) {
+      flushParagraph();
+      flushList();
+    } else if (list && /^\s{2,}/.test(line)) {
+      list.items[list.items.length - 1] += ` ${line.trim()}`;
+    } else {
+      flushList();
+      paragraph.push(line.trim());
+    }
+  }
+  flushParagraph();
+  flushList();
+  const el = h("div", { class: "md" });
+  el.innerHTML = out.join("");
+  return el;
+}
+
+const PROBLEMS_PER_PAGE = 50;
+
+const problemPicker = {
+  catalog: null,
+  company: "",
+  window: "",
+  rows: [],
+  page: 0,
+  difficulties: new Set(),
+  topic: "",
+  query: "",
+  chosen: null,
+  previewing: null,
+  previewResult: null,
+  previewError: "",
+  previewSeq: 0,
+
+  setup() {
+    $("problem-browse").addEventListener("click", () => this.open());
+    $("problem-close").addEventListener("click", () => $("problem-dialog").close());
+    $("problem-clear").addEventListener("click", () => this.clear());
+    $("language-select").addEventListener("change", () => this.syncLanguage());
+    const company = $("problem-company");
+    company.addEventListener("change", () => this.pickCompany(company.value));
+    company.addEventListener("input", () => {
+      if (this.companyNamed(company.value)) this.pickCompany(company.value);
+    });
+    $("problem-window").addEventListener("change", () => this.loadList());
+    $("problem-search").addEventListener("input", (event) => {
+      this.query = event.target.value.trim().toLowerCase();
+      this.page = 0;
+      this.renderList();
+    });
+    $("problem-topic").addEventListener("change", (event) => {
+      this.topic = event.target.value;
+      this.page = 0;
+      this.renderList();
+    });
+    for (const button of $("problem-difficulty").querySelectorAll("button")) {
+      button.addEventListener("click", () => {
+        const level = button.dataset.difficulty;
+        if (this.difficulties.has(level)) this.difficulties.delete(level);
+        else this.difficulties.add(level);
+        button.setAttribute("aria-pressed", String(this.difficulties.has(level)));
+        this.page = 0;
+        this.renderList();
+      });
+    }
+    $("problem-prev").addEventListener("click", () => this.turn(-1));
+    $("problem-next").addEventListener("click", () => this.turn(1));
+  },
+
+  language() {
+    return $("language-select").value;
+  },
+
+  supports(language) {
+    return Boolean(app.languages.find((l) => l.id === language)?.problems);
+  },
+
+  ref() {
+    return this.chosen ? { company: this.chosen.company, window: this.chosen.window, slug: this.chosen.slug } : null;
+  },
+
+  isReadyFor(language) {
+    return this.chosen?.language === language;
+  },
+
+  clear() {
+    this.chosen = null;
+    this.renderChip();
+  },
+
+  syncLanguage() {
+    const language = this.language();
+    $("problem-field").hidden = !this.supports(language);
+    if (!this.supports(language)) this.chosen = null;
+    this.renderChip();
+  },
+
+  renderChip() {
+    const chosen = this.chosen;
+    $("problem-chip").hidden = !chosen;
+    $("problem-browse").textContent = chosen ? "Change" : "Browse company problems";
+    const note = $("problem-chip-note");
+    note.hidden = true;
+    if (!chosen) return;
+    $("problem-chip-text").textContent = `${chosen.name} · ${chosen.difficulty}`;
+    if (chosen.language !== this.language()) {
+      note.hidden = false;
+      note.textContent = `A ${languageLabel(this.language())} version is written when you generate the PIN.`;
+    }
+  },
+
+  companyNamed(name) {
+    const wanted = name.trim().toLowerCase();
+    return this.catalog?.companies.find((c) => c.name.toLowerCase() === wanted) ?? null;
+  },
+
+  async open() {
+    $("problem-dialog").showModal();
+    if (!this.catalog) {
+      this.status("Loading companies…");
+      try {
+        this.catalog = await api("/api/problems/companies");
+      } catch (err) {
+        this.status(err.message);
+        return;
+      }
+      $("problem-source").href = this.catalog.source_url;
+      $("problem-source").textContent = this.catalog.source_url.replace(/^https:\/\/github\.com\//, "");
+      $("problem-companies").replaceChildren(...this.catalog.companies.map((c) => h("option", { value: c.name })));
+      const saved = localStorage.getItem(STORAGE.problemCompany);
+      if (saved && this.companyNamed(saved)) {
+        $("problem-company").value = saved;
+        this.pickCompany(saved);
+      } else {
+        this.status("Type a company name to see the problems it has asked.");
+      }
+    }
+    if (!this.rows.length) $("problem-company").focus();
+    this.renderPreview();
+  },
+
+  status(message) {
+    $("problem-count").textContent = message;
+  },
+
+  pickCompany(name) {
+    const company = this.companyNamed(name);
+    if (!company || company.name === this.company) return;
+    this.company = company.name;
+    localStorage.setItem(STORAGE.problemCompany, company.name);
+    const select = $("problem-window");
+    const previous = this.window;
+    select.replaceChildren(...company.windows.map((w) => h("option", { value: w.id }, w.label)));
+    const preferred = company.windows.find((w) => w.id === previous) ?? company.windows[0];
+    select.value = preferred.id;
+    select.disabled = false;
+    this.loadList();
+  },
+
+  async loadList() {
+    const company = this.company;
+    const windowId = $("problem-window").value;
+    if (!company || !windowId) return;
+    this.window = windowId;
+    this.rows = [];
+    this.page = 0;
+    $("problem-list").replaceChildren();
+    $("problem-pager").hidden = true;
+    this.status(`Loading ${company}…`);
+    try {
+      const data = await api(`/api/problems?company=${encodeURIComponent(company)}&window=${encodeURIComponent(windowId)}`);
+      if (company !== this.company || windowId !== this.window) return;
+      this.rows = data.problems;
+    } catch (err) {
+      this.status(err.message);
+      return;
+    }
+    const topics = [...new Set(this.rows.flatMap((r) => r.topics))].sort((a, b) => a.localeCompare(b));
+    if (!topics.includes(this.topic)) this.topic = "";
+    $("problem-topic").replaceChildren(
+      h("option", { value: "" }, "All topics"),
+      ...topics.map((t) => h("option", { value: t }, t)),
+    );
+    $("problem-topic").value = this.topic;
+    this.renderList();
+  },
+
+  filtered() {
+    return this.rows.filter((row) =>
+      (!this.difficulties.size || this.difficulties.has(row.difficulty)) &&
+      (!this.topic || row.topics.includes(this.topic)) &&
+      (!this.query || row.title.toLowerCase().includes(this.query)));
+  },
+
+  turn(delta) {
+    this.page += delta;
+    this.renderList();
+    $("problem-list").scrollTop = 0;
+  },
+
+  renderList() {
+    const rows = this.filtered();
+    const pages = Math.max(1, Math.ceil(rows.length / PROBLEMS_PER_PAGE));
+    this.page = Math.min(Math.max(0, this.page), pages - 1);
+    const start = this.page * PROBLEMS_PER_PAGE;
+    const total = this.rows.length;
+    this.status(total ? `${rows.length} of ${total} problems` : `No problems listed for ${this.company} in this window.`);
+    $("problem-list").replaceChildren(...rows.slice(start, start + PROBLEMS_PER_PAGE).map((row) => {
+      const selected = this.previewing?.slug === row.slug;
+      return h("li", {},
+        h("button", {
+          type: "button",
+          class: `problem-row${selected ? " selected" : ""}`,
+          "aria-pressed": String(selected),
+          onclick: () => this.preview(row),
+        },
+          h("span", { class: `difficulty ${row.difficulty.toLowerCase()}` }, row.difficulty),
+          h("span", { class: "problem-title" }, row.title),
+          h("span", { class: "problem-meta" },
+            h("span", { class: "frequency", title: "How often it was asked (100 = most)" },
+              h("span", { style: `width: ${Math.max(4, Math.min(100, row.frequency))}%` })),
+            row.acceptance != null ? `${row.acceptance}% accepted` : ""),
+          h("span", { class: "problem-topics" }, row.topics.slice(0, 4).join(" · "))));
+    }));
+    $("problem-pager").hidden = pages < 2;
+    $("problem-page").textContent = `Page ${this.page + 1} of ${pages}`;
+    $("problem-prev").disabled = this.page === 0;
+    $("problem-next").disabled = this.page >= pages - 1;
+  },
+
+  async preview(row) {
+    const seq = ++this.previewSeq;
+    const language = this.language();
+    this.previewing = { ...row, company: this.company, window: this.window, language };
+    this.previewResult = null;
+    this.previewError = "";
+    this.renderList();
+    this.renderPreview();
+    if (matchMedia("(max-width: 960px)").matches) $("problem-preview").scrollIntoView({ block: "start", behavior: "smooth" });
+    try {
+      const result = await api("/api/problems/generate", {
+        method: "POST",
+        body: { company: this.company, window: this.window, slug: row.slug, language },
+      });
+      if (seq !== this.previewSeq) return;
+      this.previewResult = result;
+    } catch (err) {
+      if (seq !== this.previewSeq) return;
+      this.previewError = err.message;
+    }
+    this.renderPreview();
+  },
+
+  renderPreview() {
+    const pane = $("problem-preview");
+    const target = this.previewing;
+    if (!target) {
+      pane.replaceChildren(h("p", { class: "caption" }, "Pick a problem to preview an original version written for your interview."));
+      return;
+    }
+    const heading = h("div", { class: "preview-source" },
+      h("span", { class: `difficulty ${target.difficulty.toLowerCase()}` }, target.difficulty),
+      h("span", {}, `Based on “${target.title}” (${target.company})`));
+    if (this.previewError) {
+      pane.replaceChildren(heading, h("p", { class: "error" }, this.previewError),
+        h("button", { class: "btn btn-sm", type: "button", onclick: () => this.preview(target) }, "Try again"));
+      return;
+    }
+    const result = this.previewResult;
+    if (!result) {
+      pane.replaceChildren(heading, h("p", { class: "caption working" },
+        `Writing an original ${languageLabel(target.language)} version. This takes about 20 seconds the first time.`));
+      return;
+    }
+    const entry = Object.keys(result.files).find((path) => path !== PROBLEM_FILE);
+    const notes = result.notes;
+    const noteList = (title, items) => items.length
+      ? h("div", {}, h("h5", {}, title), h("ul", {}, ...items.map((item) => h("li", {}, item))))
+      : null;
+    pane.replaceChildren(
+      heading,
+      h("div", { class: "preview-actions" },
+        h("button", { class: "btn btn-primary", type: "button", onclick: () => this.choose() }, "Use this problem"),
+        h("span", { class: "caption" }, result.cached ? "Saved in this workspace" : "Written just now")),
+      h("section", { class: "preview-candidate" },
+        h("h4", {}, "What the candidate sees"),
+        renderMarkdown(result.files[PROBLEM_FILE] || ""),
+        entry ? h("details", {}, h("summary", {}, `Starter file: ${entry}`), h("pre", {}, result.files[entry])) : null),
+      h("section", { class: "preview-notes" },
+        h("h4", {}, "Interviewer notes (only you see these)"),
+        notes.approach ? h("p", {}, h("strong", {}, "Approach. "), notes.approach) : null,
+        notes.complexity ? h("p", {}, h("strong", {}, "Target complexity. "), notes.complexity) : null,
+        noteList("Hints", notes.hints),
+        noteList("Follow-ups", notes.follow_ups),
+        noteList("Pitfalls", notes.pitfalls)),
+    );
+  },
+
+  choose() {
+    const target = this.previewing;
+    const result = this.previewResult;
+    if (!target || !result) return;
+    this.chosen = {
+      company: target.company,
+      window: target.window,
+      slug: target.slug,
+      difficulty: target.difficulty,
+      language: target.language,
+      name: result.name,
+    };
+    $("problem-dialog").close();
+    this.renderChip();
+  },
+};
+
 function setupHome() {
   const pinInput = $("pin-input");
   pinInput.addEventListener("input", () => {
@@ -434,31 +812,47 @@ function setupHome() {
     }
   });
 
-  $("create-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
+  const createSession = async ({ withProblem = true } = {}) => {
     const candidate_name = $("candidate-input").value.trim();
     if (!candidate_name) return;
-    $("create-btn").disabled = true;
+    const language = $("language-select").value;
+    const problem = withProblem ? problemPicker.ref() : null;
+    const button = $("create-btn");
+    button.disabled = true;
     $("create-error").textContent = "";
+    $("create-fallback").hidden = true;
+    if (problem && !problemPicker.isReadyFor(language)) button.textContent = "Writing the problem…";
     try {
       const org_id = $("org-select").value || null;
       localStorage.setItem(STORAGE.org, org_id ?? "");
       const session = await api("/api/sessions", {
         method: "POST",
-        body: { candidate_name, language: $("language-select").value, org_id },
+        body: { candidate_name, language, org_id, ...(problem ? { problem } : {}) },
       });
       $("pin-result").hidden = false;
       $("pin-result-name").textContent = session.candidate_name;
       $("pin-result-pin").textContent = session.pin;
       $("open-new-session").href = `#/s/${session.id}`;
       $("candidate-input").value = "";
+      problemPicker.clear();
       loadSessions();
     } catch (err) {
       $("create-error").textContent = err.message;
+      $("create-fallback").hidden = !(problem && [429, 502, 503].includes(err.status));
     } finally {
-      $("create-btn").disabled = false;
+      button.disabled = false;
+      button.textContent = "Generate PIN";
     }
+  };
+  $("create-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    createSession();
   });
+  $("create-plain").addEventListener("click", () => {
+    problemPicker.clear();
+    createSession({ withProblem: false });
+  });
+  problemPicker.setup();
 
   $("copy-pin").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("pin-result-pin").textContent);
@@ -843,6 +1237,7 @@ const ide = {
     this.renderTree();
     const lang = app.languages.find((l) => l.id === state.session.language);
     const first = (lang && this.files.has(lang.entry) && lang.entry) || this.visiblePaths()[0];
+    if (first && first !== PROBLEM_FILE && this.files.has(PROBLEM_FILE)) this.openFile(PROBLEM_FILE);
     if (first) this.openFile(first);
     else this.renderEditor();
     $("console").replaceChildren();
@@ -2799,6 +3194,7 @@ async function init() {
   app.info = info;
   app.languages = languages;
   $("language-select").replaceChildren(...languages.map((l) => h("option", { value: l.id }, l.label)));
+  problemPicker.syncLanguage();
   await loadIdentity();
   window.addEventListener("hashchange", route);
   await route();

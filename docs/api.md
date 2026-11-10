@@ -15,7 +15,10 @@ The live OpenAPI explorer is at [watchmecode.live/docs](https://watchmecode.live
 
 | Method | Path | Body / query | Returns |
 | --- | --- | --- | --- |
-| POST | `/api/sessions` | `{candidate_name, language, org_id?}` | 201 session with `pin` |
+| POST | `/api/sessions` | `{candidate_name, language, org_id?, problem?: {company, window, slug}}` | 201 session with `pin`; with `problem`, the starter files are the AI-written problem (502 if it can't be written, 429 past the hourly limit) |
+| GET | `/api/problems/companies` |  | `{source_url, companies: [{name, windows: [{id, label}]}], languages}` |
+| GET | `/api/problems` | `?company=&window=` | `{company, window, problems: [{slug, title, difficulty, frequency, acceptance, topics}]}` |
+| POST | `/api/problems/generate` | `{company, window, slug, language}` | Interviewer preview `{name, summary, files, notes, source, cached}`; cached per workspace |
 | GET | `/api/sessions` | `?candidate_name=`, `?org_id=` | Your sessions and your organizations' sessions |
 | GET | `/api/sessions/{id}` |  | Session with `files` and `runs` |
 | POST | `/api/sessions/{id}/end` |  | Ends the session, retires the PIN, stops any recording, and pushes results to connected integrations |
